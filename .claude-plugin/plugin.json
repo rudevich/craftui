@@ -1,0 +1,10 @@
+{
+  "name": "craftui",
+  "version": "0.1.0",
+  "description": "Figma → React 19 components (CSS Modules) in an rspack library with demo pages, Playwright screenshot tests and rstest unit tests. Works via Figma MCP or Chrome MCP.",
+  "author": { "name": "rudevich" },
+  "homepage": "https://github.com/rudevich/craftui",
+  "repository": "https://github.com/rudevich/craftui",
+  "license": "MIT",
+  "keywords": ["figma", "react", "css-modules", "rspack", "design-system", "ui-kit"]
+}

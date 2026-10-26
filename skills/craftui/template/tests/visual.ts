@@ -1,0 +1,149 @@
+// Screenshot tests: every craftlog/figma/screenshots/<id>.png is compared with the demo target <id>.
+// Results go to craftlog/visual/output/<id>.{json,actual.png,diff.png}; `npm run craftui -- verify` summarizes them.
+import fs from 'node:fs';
+import path from 'node:path';
+import { expect, type Locator, test } from '@playwright/test';
+import { type Box, compare, describeResult } from './compare';
+
+type TargetConfig = { maxDiffRatio?: number; threshold?: number; mask?: Box[]; skip?: boolean; reason?: string };
+type SpecNode = { key: string; slot?: string; css?: Record<string, string>; expect?: Record<string, string>; children?: SpecNode[] };
+
+const config = JSON.parse(fs.readFileSync('craftui.config.json', 'utf8'));
+const readJson = (file: string) => (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : undefined);
+
+export function describeVisual(name: string, kind = 'components') {
+  const root = path.join('src', kind, name, 'craftlog');
+  const shots = path.join(root, 'figma', 'screenshots');
+  const out = path.join(root, 'visual', 'output');
+  const visualConfig = readJson(path.join(root, 'visual', 'visual.config.json')) ?? {};
+  const spec = readJson(path.join(root, 'figma', 'spec.json'));
+  const nodeMap: Record<string, string> = readJson(path.join(root, 'figma', 'node-map.json')) ?? {};
+  // Targets whose reference reaches outside the node (an open dropdown, a shadow): offset and size of that area.
+  const bounds: Record<string, Box> = readJson(path.join(shots, 'bounds.json')) ?? {};
+  const ids = fs.existsSync(shots)
+    ? fs.readdirSync(shots).filter((f) => f.endsWith('.png')).map((f) => f.slice(0, -4)).sort()
+    : [];
+
+  test.describe(`${kind}/${name}`, () => {
+    if (!ids.length) test('Figma references exist', () => expect(ids, `no PNG in ${shots}`).not.toHaveLength(0));
+
+    for (const id of ids) {
+      const t: TargetConfig = { ...visualConfig.default, ...visualConfig.targets?.[id] };
+      test(id, async ({ page }) => {
+        test.skip(Boolean(t.skip), t.reason);
+        fs.mkdirSync(out, { recursive: true });
+        await page.goto(`/#/${kind}/${name}?target=${encodeURIComponent(id)}&isolated`);
+        const target = page.locator(`[data-cu-target="${id}"]`);
+        await expect(target, `target "${id}" is missing in ${name}.demo.tsx`).toBeVisible({ timeout: 15_000 });
+        // Font stylesheets may be added at runtime (demo/fonts.ts): wait for them, then for the fonts themselves.
+        await page.waitForLoadState('networkidle');
+        await page.evaluate(() => document.fonts.ready);
+
+        const area = bounds[id];
+        const box = area && (await target.boundingBox());
+        const actual = box
+          ? await page.screenshot({ clip: { x: box.x + area.x, y: box.y + area.y, width: area.w, height: area.h }, fullPage: true, omitBackground: true, animations: 'disabled', caret: 'hide' })
+          : await target.screenshot({ omitBackground: true, animations: 'disabled', caret: 'hide' });
+        fs.writeFileSync(path.join(out, `${id}.actual.png`), actual);
+        const result = compare(fs.readFileSync(path.join(shots, `${id}.png`)), actual, {
+          scale: config.scale,
+          threshold: t.threshold,
+          masks: t.mask,
+        });
+        fs.writeFileSync(path.join(out, `${id}.diff.png`), result.diffPng);
+
+        const tree = spec?.targets?.find((x: { id: string }) => x.id === id)?.tree;
+        const styleIssues = tree ? await styleCheck(target, name, tree, nodeMap) : [];
+        const maxDiffRatio = t.maxDiffRatio ?? config.maxDiffRatio;
+        const pass = result.diffRatio <= maxDiffRatio && !result.sizeMismatch;
+        // Style issues name the exact property to fix, so they go right after the headline.
+        const [headline, ...details] = describeResult(result);
+        const report = [headline, ...styleIssues, ...details];
+        const { diffPng, ...json } = result;
+        fs.writeFileSync(
+          path.join(out, `${id}.json`),
+          JSON.stringify({ id, pass, maxDiffRatio, ...json, styleIssues, report }, null, 2),
+        );
+        expect(pass, report.join('\n')).toBe(true);
+      });
+    }
+  });
+}
+
+// Compares computed styles of mapped elements with values Figma gave for the same layers.
+async function styleCheck(target: Locator, folder: string, tree: SpecNode, nodeMap: Record<string, string>) {
+  // `opacity` is compared as painted: the product along the layer path in Figma and along the element's ancestors in React,
+  // so a dimmed wrapper in code equals dimmed layers inside it in Figma.
+  const checks: { key: string; className: string; expect: Record<string, string>; opacity: number }[] = [];
+  // A layer turned by ±90° in Figma (a vertical divider drawn as a horizontal one) has width and height swapped.
+  const quarterTurn = (node: SpecNode) => /rotate\(-?(90|270)deg\)/.test(node.css?.transform ?? '');
+  const walk = (node: SpecNode, inherited = 1, turned = false) => {
+    if (node.slot) return; // slot content belongs to what the consumer passes in, not to the component
+    const opacity = inherited * Number(node.expect?.opacity ?? 1);
+    const swap = turned !== quarterTurn(node);
+    const expect = swap && node.expect ? { ...node.expect, width: node.expect.height, height: node.expect.width } : node.expect;
+    if (expect && nodeMap[node.key]) checks.push({ key: node.key, className: `${folder}__${nodeMap[node.key]}`, expect: Object.fromEntries(Object.entries(expect).filter(([, v]) => v !== undefined)) as Record<string, string>, opacity });
+    node.children?.forEach((child) => walk(child, opacity, swap));
+  };
+  walk(tree);
+  if (!checks.length) return [];
+
+  return target.evaluate((root, checks) => {
+    const issues: string[] = [];
+    const num = (v: string) => (v.endsWith('px') ? Number.parseFloat(v) : Number.NaN);
+    const rgba = (v: string) => {
+      const probe = document.createElement('i');
+      probe.style.color = v;
+      document.body.append(probe);
+      const computed = getComputedStyle(probe).color;
+      probe.remove();
+      const c = computed.match(/[\d.]+/g)?.map(Number) ?? [];
+      // color-mix() computes to color(srgb r g b / a) with channels 0…1.
+      if (computed.startsWith('color(')) return [c[0] * 255, c[1] * 255, c[2] * 255, c[3] ?? 1];
+      return [c[0], c[1], c[2], c[3] ?? 1];
+    };
+    // Figma puts text transparency into opacity, CSS may put it into the colour (color-mix): compare what is painted.
+    const painted = (color: string, opacity: number) => {
+      const c = rgba(color);
+      return [c[0], c[1], c[2], c[3] * opacity];
+    };
+    const ancestorsOpacity = (el: Element) => {
+      let o = 1;
+      for (let n: Element | null = el; n && n !== root.parentElement; n = n.parentElement) o *= Number(getComputedStyle(n).opacity);
+      return o;
+    };
+    const sameColor = (a: number[], b: number[]) => (a[3] <= 0.02 && b[3] <= 0.02) || a.every((v, i) => Math.abs(v - b[i]) <= (i === 3 ? 0.02 : 3));
+    for (const check of checks) {
+      const el = root.matches(`.${CSS.escape(check.className)}`) ? root : root.querySelector(`.${CSS.escape(check.className)}`);
+      if (!el) {
+        issues.push(`${check.key}: элемент .${check.className} не найден`);
+        continue;
+      }
+      const cs = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      for (const [prop, expected] of Object.entries(check.expect)) {
+        // Figma sizes include padding and borders, like the element's border box.
+        const actual = prop === 'width' || prop === 'height' ? `${Math.round(rect[prop] * 100) / 100}px` : cs.getPropertyValue(prop);
+        let same: boolean;
+        if (prop === 'color') {
+          same = sameColor(painted(expected, check.opacity), painted(actual, ancestorsOpacity(el)));
+        } else if (prop.includes('color')) {
+          // Any fully transparent colour is the same nothing: rgba(255, 255, 255, 0) = transparent.
+          same = sameColor(rgba(expected), rgba(actual));
+        } else if (prop === 'opacity') {
+          const [want, got] = check.expect.color ? [painted(check.expect.color, check.opacity)[3], painted(cs.color, ancestorsOpacity(el))[3]] : [check.opacity, ancestorsOpacity(el)];
+          same = Math.abs(want - got) <= 0.02;
+        } else if (prop === 'font-family') {
+          same = actual.toLowerCase().includes(expected.toLowerCase().replace(/["']/g, '').split(',')[0].trim());
+        } else if (!Number.isNaN(num(expected))) {
+          // Figma rounds text boxes to whole pixels, the browser does not: sizes get 1.5px.
+          same = Math.abs(num(expected) - num(actual)) <= (prop === 'width' || prop === 'height' ? 1.5 : 0.5);
+        } else {
+          same = expected === actual;
+        }
+        if (!same) issues.push(`${check.key}: ${prop} ожидалось ${expected}, получено ${actual}`);
+      }
+    }
+    return issues;
+  }, checks);
+}

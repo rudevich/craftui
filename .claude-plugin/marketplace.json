@@ -1,0 +1,12 @@
+{
+  "name": "craftui",
+  "owner": { "name": "rudevich" },
+  "description": "The craftui skill: Figma components and UI kits → React 19 + CSS Modules library with demo pages and screenshot tests.",
+  "plugins": [
+    {
+      "name": "craftui",
+      "source": "./",
+      "description": "Figma → React 19 components (CSS Modules) in an rspack library with demo pages and screenshot tests."
+    }
+  ]
+}

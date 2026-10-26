@@ -1,0 +1,7 @@
+node_modules/
+playground/
+playground-*/
+.DS_Store
+~/
+.claude/
+todo.md

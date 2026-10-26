@@ -1,0 +1,4 @@
+/* Shared design tokens from Figma variables and styles.
+   Managed by `npm run craftui -- tokens <Name>` (adds missing ones); values can be edited by hand. */
+:root {
+}

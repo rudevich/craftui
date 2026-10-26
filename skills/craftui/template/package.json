@@ -1,0 +1,50 @@
+{
+  "name": "__PACKAGE_NAME__",
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "files": [
+    "dist"
+  ],
+  "exports": {},
+  "scripts": {
+    "dev": "node scripts/gen.mjs && rspack serve -c rspack.demo.config.mjs",
+    "build": "node scripts/gen.mjs && rspack build -c rspack.lib.config.mjs && tsc -p tsconfig.build.json",
+    "gen": "node scripts/gen.mjs",
+    "typecheck": "node scripts/gen.mjs && tsc --noEmit",
+    "test": "rstest run",
+    "test:visual": "playwright test",
+    "craftui": "node scripts/craftui/cli.mjs"
+  },
+  "peerDependencies": {
+    "react": ">=19",
+    "react-dom": ">=19"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@rspack/cli": "2.2.9",
+    "@rspack/core": "2.2.9",
+    "@rspack/dev-server": "2.2.1",
+    "@rstest/core": "0.12.4",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.8",
+    "@types/node": "24.19.2",
+    "@types/pngjs": "6.0.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "happy-dom": "20.14.6",
+    "pixelmatch": "8.0.0",
+    "pngjs": "7.0.0",
+    "postcss": "8.5.31",
+    "react": "19.3.1",
+    "react-docgen-typescript": "2.4.0",
+    "react-dom": "19.3.1",
+    "typescript": "6.0.3"
+  }
+}

@@ -1,0 +1,94 @@
+/* Demo UI only: every selector is scoped to .cu-* so component styles stay untouched. */
+html[data-cu-isolated],
+html[data-cu-isolated] body {
+  margin: 0;
+  background: transparent;
+}
+
+/* Room for what a target draws outside itself (shadow, open dropdown): the screenshot clips that area. */
+html[data-cu-isolated] body {
+  padding: 80px;
+}
+
+.cu-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+  font: 14px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: #1d1d1f;
+  background: #f6f6f7;
+}
+
+.cu-layout h1 { margin: 0; font-size: 24px; }
+.cu-layout h2 { margin: 24px 0 12px; font-size: 16px; }
+
+.cu-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: auto;
+  padding: 16px;
+  background: #fff;
+  border-right: 1px solid #e3e3e6;
+}
+.cu-sidebar h2 { margin: 16px 0 4px; font-size: 12px; text-transform: uppercase; color: #8a8a8e; }
+.cu-sidebar a { display: block; padding: 4px 8px; border-radius: 6px; color: inherit; text-decoration: none; }
+.cu-sidebar a:hover { background: #f0f0f2; }
+.cu-sidebar a[aria-current='page'] { background: #e8f0fe; color: #1a56db; }
+.cu-sidebar .cu-logo { font-weight: 600; font-size: 16px; padding: 0 8px; }
+
+.cu-main { padding: 24px 32px; min-width: 0; }
+.cu-header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.cu-muted { color: #8a8a8e; }
+.cu-pass { color: #0a7d32; }
+.cu-fail { color: #c5221f; }
+
+/* Figma states: one per line, React and the Figma reference of that state side by side in the card */
+.cu-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.cu-card { margin: 0; padding: 12px; background: #fff; border: 1px solid #e3e3e6; border-radius: 10px; min-width: 0; }
+.cu-card figcaption { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin-bottom: 8px; }
+.cu-card code { color: #8a8a8e; font-size: 12px; }
+.cu-card pre { margin: 4px 0 0; font-size: 12px; overflow: auto; }
+.cu-card summary { cursor: pointer; color: #8a8a8e; font-size: 12px; }
+.cu-compare { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; padding: 8px; border-radius: 6px; }
+.cu-compare > div { display: flex; flex-direction: column; gap: 4px; }
+.cu-label { font-size: 11px; color: #8a8a8e; }
+
+.cu-props { border-collapse: collapse; background: #fff; width: 100%; }
+.cu-props th, .cu-props td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #e3e3e6; vertical-align: top; }
+.cu-empty { max-width: 560px; }
+
+/* Tabs: "Свойства" and "Песочница" */
+.cu-tabs { display: flex; gap: 4px; padding: 3px; background: #e9e9ec; border-radius: 8px; }
+.cu-tabs a { padding: 4px 12px; border-radius: 6px; color: inherit; text-decoration: none; }
+.cu-tabs a[aria-current='page'] { background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+.cu-section-head { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+
+/* Showcase: one row per property, each value of it on a line of its own */
+.cu-showcase { display: flex; flex-direction: column; gap: 12px; }
+.cu-row { display: grid; grid-template-columns: 140px 1fr; gap: 12px; align-items: start; }
+.cu-row-name { padding-top: 8px; color: #45454a; }
+.cu-row-items { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding: 12px; background: #fff; border: 1px solid #e3e3e6; border-radius: 10px; min-width: 0; }
+.cu-item { margin: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.cu-item figcaption { font-size: 11px; color: #8a8a8e; }
+
+/* Playground: preview + code on the left, controls on the right */
+.cu-playground { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; margin-top: 16px; align-items: start; }
+.cu-playground-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.cu-preview { display: flex; align-items: center; justify-content: center; min-height: 200px; padding: 24px; background: #fff; border: 1px solid #e3e3e6; border-radius: 10px; }
+.cu-code { position: relative; background: #1d1d1f; color: #f2f2f4; border-radius: 10px; }
+.cu-code pre { margin: 0; padding: 12px 16px; overflow: auto; font-size: 13px; }
+.cu-code-actions { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; }
+.cu-code-actions button { font: inherit; font-size: 12px; padding: 3px 10px; border: 0; border-radius: 6px; background: #3a3a3e; color: #f2f2f4; cursor: pointer; }
+.cu-controls { display: flex; flex-direction: column; gap: 10px; padding: 12px; background: #fff; border: 1px solid #e3e3e6; border-radius: 10px; }
+.cu-field { display: grid; grid-template-columns: 110px 1fr; gap: 8px; align-items: center; }
+.cu-field select, .cu-field input[type='text'], .cu-field input[type='number'] { font: inherit; padding: 4px 6px; border: 1px solid #d2d2d7; border-radius: 6px; min-width: 0; }
+.cu-field input[type='checkbox'] { justify-self: start; }
+.cu-slot { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+
+@media (max-width: 900px) {
+  .cu-layout { grid-template-columns: 1fr; }
+  .cu-sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid #e3e3e6; }
+  .cu-playground { grid-template-columns: 1fr; }
+  .cu-row { grid-template-columns: 1fr; }
+}

@@ -1,0 +1,15 @@
+{
+  "source": "",
+  "scale": 2,
+  "maxDiffRatio": 0.01,
+  "tokenPrefix": "",
+  "port": 4600,
+  "receiverPort": 4601,
+  "autopilot": {
+    "agent": "claude",
+    "commands": {
+      "claude": "claude -p --continue --permission-mode acceptEdits {prompt}",
+      "codex": "codex exec resume --last {prompt}"
+    }
+  }
+}
