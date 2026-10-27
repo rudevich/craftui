@@ -2,16 +2,111 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-// Kind → folder. v2 adds `page: 'src/pages'`.
-export const KIND_DIRS = { component: 'src/components' };
-export const KIND_ALIASES = { components: 'component', page: 'page', pages: 'page' };
+export const KINDS = ['component', 'page'];
+export const KIND_ALIASES = { component: 'component', components: 'component', page: 'page', pages: 'page' };
 
 export const readJson = (file, fallback) => (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : fallback);
 export const writeJson = (file, data) => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
 };
-export const config = () => readJson('craftui.config.json', {});
+
+// ── project settings (craftui.config.json) ───────────────────────────────────
+
+const DEFAULTS = {
+  source: 'chrome',
+  defaultKind: 'component',
+  // One level under src/: generated code imports src/lib through ../../
+  dirs: { component: 'src/components', page: 'src/pages' },
+  // small: outputs for a ~64k window (brief, spec); large: more detail per printout
+  context: 'small',
+  verifyIterations: 5,
+  demoFonts: [],
+  scale: 2,
+  maxDiffRatio: 0.01,
+  tokenPrefix: '',
+  pages: { breakpoints: null, scale: 1, maxDiffRatio: 0.02, export: true },
+  port: 4600,
+  receiverPort: 4601,
+};
+
+/** Settings with defaults; the nested blocks merge key by key, so a project may set only what it changes. */
+export const withDefaults = (raw = {}) => ({ ...DEFAULTS, ...raw, dirs: { ...DEFAULTS.dirs, ...raw.dirs }, pages: { ...DEFAULTS.pages, ...raw.pages } });
+export const config = () => withDefaults(readJson('craftui.config.json', {}));
+
+/** What is wrong in the settings, one line each (`craftui status` shows them). */
+export function configProblems(cfg) {
+  const out = [];
+  for (const [kind, dir] of Object.entries(cfg.dirs)) {
+    if (!KINDS.includes(kind)) out.push(`dirs.${kind}: такого вида нет (есть ${KINDS.join(', ')})`);
+    else if (!/^src\/[a-z][a-z0-9-]*$/.test(dir)) out.push(`dirs.${kind}: "${dir}" — нужна папка вида src/<имя> на один уровень`);
+  }
+  if (new Set(Object.values(cfg.dirs)).size !== Object.keys(cfg.dirs).length) out.push('dirs: у видов должны быть разные папки');
+  if (!KINDS.includes(cfg.defaultKind)) out.push(`defaultKind: "${cfg.defaultKind}" — ${KINDS.join(' или ')}`);
+  if (!['small', 'large'].includes(cfg.context)) out.push(`context: "${cfg.context}" — small или large`);
+  if (cfg.pages.breakpoints) out.push(...breakpointProblems(cfg.pages.breakpoints));
+  return out;
+}
+
+/** Kind → folder, from the settings. */
+export function kindDirs() {
+  const cfg = config();
+  const bad = configProblems(cfg).filter((p) => p.startsWith('dirs'));
+  if (bad.length) fail(`craftui.config.json: ${bad.join('; ')}`);
+  return cfg.dirs;
+}
+
+/** Output limit of one printout (brief, spec): about 4k tokens for a small window. */
+export const printLimit = () => (config().context === 'large' ? 40000 : 12000);
+
+// ── page breakpoints (pages.breakpoints) ──────────────────────────────────────
+
+export const BREAKPOINTS = ['mobile', 'tablet', 'desktop', 'largeDesktop'];
+
+/** Enabled ranges in order, both bounds inclusive: [{ name, min, max }], max is Infinity for the last one. */
+export const breakpointRanges = (bp) => BREAKPOINTS.filter((n) => bp?.[n]).map((n) => ({ name: n, min: bp[n].min ?? 0, max: bp[n].max ?? Infinity }));
+
+export function breakpointProblems(bp) {
+  const ranges = breakpointRanges(bp);
+  if (!ranges.length) return ['pages.breakpoints: нет ни одного диапазона'];
+  const out = [];
+  ranges.forEach((r, i) => {
+    if (r.min > r.max) out.push(`pages.breakpoints.${r.name}: min больше max`);
+    if (i > 0 && r.min !== ranges[i - 1].max + 1) out.push(`pages.breakpoints.${r.name}: должен начинаться с ${ranges[i - 1].max + 1} (сразу после ${ranges[i - 1].name})`);
+    if (i < ranges.length - 1 && r.max === Infinity) out.push(`pages.breakpoints.${r.name}: без max может быть только последний диапазон`);
+  });
+  if (ranges[0].min !== 0) out.push(`pages.breakpoints.${ranges[0].name}: первый диапазон начинается с 0 (без min)`);
+  if (ranges.at(-1).max !== Infinity) out.push(`pages.breakpoints.${ranges.at(-1).name}: у последнего диапазона нет max`);
+  return out;
+}
+
+/**
+ * Ranges from the user's answers: the upper bound of each one, inclusive. Empty tablet: no tablet;
+ * empty desktop: desktop has no upper bound and there is no large desktop.
+ */
+export function breakpointsFrom({ mobile, tablet, desktop }) {
+  const num = (v) => (v === undefined || v === null || String(v).trim() === '' ? null : Number(v));
+  const [m, t, d] = [num(mobile), num(tablet), num(desktop)];
+  if (!Number.isInteger(m) || m <= 0) throw new Error('mobile — граница в px, например 767');
+  for (const [name, v] of [['tablet', t], ['desktop', d]]) if (v !== null && !Number.isInteger(v)) throw new Error(`${name} — целое число px или пусто`);
+  if (t !== null && t <= m) throw new Error('tablet должен быть больше mobile');
+  if (d !== null && d <= (t ?? m)) throw new Error('desktop должен быть больше tablet и mobile');
+  const top = t ?? m;
+  return {
+    mobile: { max: m },
+    tablet: t !== null ? { min: m + 1, max: t } : null,
+    desktop: d !== null ? { min: top + 1, max: d } : { min: top + 1 },
+    largeDesktop: d !== null ? { min: d + 1 } : null,
+  };
+}
+
+/** The range a frame of this width belongs to, or undefined. */
+export const breakpointOf = (width, bp) => breakpointRanges(bp).find((r) => width >= r.min && width <= r.max)?.name;
+
+export const describeBreakpoints = (bp) =>
+  breakpointRanges(bp)
+    .map((r) => `${r.name} ${r.min === 0 ? `≤ ${r.max}` : r.max === Infinity ? `≥ ${r.min}` : `${r.min}–${r.max}`}px`)
+    .join(' · ');
 export const now = () => new Date().toISOString().slice(0, 16).replace('T', ' ');
 
 /**
@@ -80,7 +175,7 @@ function translit(s) {
   });
 }
 
-const SAVE_PATH = /^src\/[a-z]+\/[A-Za-z0-9]+\/craftlog\/[\w./-]+$/;
+const SAVE_PATH = /^src\/[a-z][a-z0-9-]*\/[A-Za-z0-9]+\/craftlog\/[\w./-]+$/;
 
 /** Normalized relative path if it points inside some src/<kind>/<Name>/craftlog/, else null. */
 export function safeCraftlogPath(p) {
@@ -92,14 +187,14 @@ export function safeCraftlogPath(p) {
 // ── entities ──────────────────────────────────────────────────────────────────
 
 export function entityDir(kind, name) {
-  const dir = KIND_DIRS[kind];
-  if (!dir) fail(`unknown kind "${kind}" (known: ${Object.keys(KIND_DIRS).join(', ')})`);
+  const dir = kindDirs()[kind];
+  if (!dir) fail(`unknown kind "${kind}" (known: ${KINDS.join(', ')})`);
   return path.join(dir, name);
 }
 
 export function listEntities() {
   const out = [];
-  for (const [kind, dir] of Object.entries(KIND_DIRS)) {
+  for (const [kind, dir] of Object.entries(kindDirs())) {
     if (!fs.existsSync(dir)) continue;
     for (const name of fs.readdirSync(dir)) {
       const stateFile = path.join(dir, name, 'craftlog', 'state.json');

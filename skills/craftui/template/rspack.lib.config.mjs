@@ -1,26 +1,32 @@
-// Library build: one ESM entry per component (dist/components/<Name>/index.js + index.css) plus dist/tokens.css.
+// Library build: one ESM entry per component (dist/components/<Name>/index.js + index.css), per page
+// (dist/pages/<Page>/index.js, when pages.export is on) plus dist/tokens.css. Folders come from craftui.config.json → dirs.
 import fs from 'node:fs';
 import path from 'node:path';
+import { config } from './scripts/craftui/lib.mjs';
 
-const src = path.resolve('src');
-const componentsDir = path.join(src, 'components');
-const components = fs.existsSync(componentsDir)
-  ? fs.readdirSync(componentsDir).filter((name) => fs.existsSync(path.join(componentsDir, name, 'index.ts')))
-  : [];
+const cfg = config();
+const entitiesIn = (dir) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((name) => fs.existsSync(path.join(dir, name, 'index.ts'))) : []);
+const componentsDir = path.resolve(cfg.dirs.component);
+const pagesDir = path.resolve(cfg.dirs.page);
+const components = entitiesIn(componentsDir);
+const pages = cfg.pages.export ? entitiesIn(pagesDir) : [];
 
 const entry = { tokens: './src/tokens.css' };
 if (components.length) entry.index = './src/index.ts';
-for (const name of components) entry[`components/${name}/index`] = `./src/components/${name}/index.ts`;
+for (const name of components) entry[`${path.basename(componentsDir)}/${name}/index`] = `./${cfg.dirs.component}/${name}/index.ts`;
+for (const name of pages) entry[`${path.basename(pagesDir)}/${name}/index`] = `./${cfg.dirs.page}/${name}/index.ts`;
 
-// Imports of another component's folder stay imports of its built entry, so shared components are not duplicated.
+// Imports of a component's folder stay imports of its built entry, so shared components are not duplicated:
+// from another component, from a page (and its parts) and from src/index.ts.
 function siblingComponents({ context, request }, callback) {
   if (!request?.startsWith('.')) return callback();
   const target = path.relative(componentsDir, path.resolve(context, request)).split(path.sep);
   if (target.length !== 1 || target[0].startsWith('..') || !components.includes(target[0])) return callback();
-  const own = path.relative(componentsDir, context).split(path.sep)[0];
-  if (own === target[0]) return callback();
-  const from = context.startsWith(componentsDir) ? path.join(componentsDir, own) : src;
-  let rel = path.relative(from, path.join(componentsDir, target[0], 'index.js')).split(path.sep).join('/');
+  const ownIn = (dir) => (context.startsWith(dir + path.sep) ? path.relative(dir, context).split(path.sep)[0] : null);
+  if (ownIn(componentsDir) === target[0]) return callback();
+  // dist mirrors the folders: the importing entry is dist/<components>/<Name>, dist/<pages>/<Page> or dist/ (index).
+  const out = ownIn(componentsDir) ? `${path.basename(componentsDir)}/${ownIn(componentsDir)}` : ownIn(pagesDir) ? `${path.basename(pagesDir)}/${ownIn(pagesDir)}` : '.';
+  let rel = path.posix.relative(out, `${path.basename(componentsDir)}/${target[0]}/index.js`);
   if (!rel.startsWith('.')) rel = `./${rel}`;
   callback(null, rel);
 }

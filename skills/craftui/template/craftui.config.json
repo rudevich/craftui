@@ -1,8 +1,22 @@
 {
   "source": "chrome",
+  "defaultKind": "component",
+  "dirs": {
+    "component": "src/components",
+    "page": "src/pages"
+  },
+  "context": "small",
+  "verifyIterations": 5,
+  "demoFonts": [],
   "scale": 2,
   "maxDiffRatio": 0.01,
   "tokenPrefix": "",
+  "pages": {
+    "breakpoints": null,
+    "scale": 1,
+    "maxDiffRatio": 0.02,
+    "export": true
+  },
   "port": 4600,
   "receiverPort": 4601,
   "autopilot": {

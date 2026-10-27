@@ -40,6 +40,7 @@ const USER_FILES = new Set(['demo/fonts.ts']);
 const toolOwned = (rel) => !USER_FILES.has(rel) && (TOOL_FILES.includes(rel) || /^(scripts|tests|demo)\//.test(rel));
 
 const created = [];
+const notes = [];
 const updated = [];
 const kept = [];
 
@@ -88,7 +89,14 @@ for (const rel of walk(templateDir)) {
   } else if (dest === 'craftui.config.json') {
     const tpl = JSON.parse(content);
     const cur = exists ? JSON.parse(fs.readFileSync(destFile, 'utf8')) : {};
-    const mergedCfg = { ...tpl, ...cur, autopilot: { ...tpl.autopilot, ...cur.autopilot, commands: { ...tpl.autopilot.commands, ...cur.autopilot?.commands } } };
+    // Nested blocks merge key by key: a new setting reaches old projects, the user's values stay.
+    const mergedCfg = {
+      ...tpl,
+      ...cur,
+      dirs: { ...tpl.dirs, ...cur.dirs },
+      pages: { ...tpl.pages, ...cur.pages },
+      autopilot: { ...tpl.autopilot, ...cur.autopilot, commands: { ...tpl.autopilot.commands, ...cur.autopilot?.commands } },
+    };
     if (!exists || JSON.stringify(mergedCfg) !== JSON.stringify(cur)) write(dest, `${JSON.stringify(mergedCfg, null, 2)}\n`);
     else kept.push(dest);
   } else if (dest === '.claude/settings.json') {
@@ -99,6 +107,15 @@ for (const rel of walk(templateDir)) {
     const mergedSettings = { ...cur, permissions: { ...cur.permissions, deny } };
     if (!exists || JSON.stringify(mergedSettings) !== JSON.stringify(cur)) write(dest, `${JSON.stringify(mergedSettings, null, 2)}\n`);
     else kept.push(dest);
+  } else if (dest === 'demo/fonts.ts' && exists) {
+    // Fonts now come from "demoFonts" of the settings. An untouched old stub is replaced, a file edited by hand is kept.
+    const cur = fs.readFileSync(destFile, 'utf8');
+    if (cur === content) kept.push(dest);
+    else if (/^\/\/ Fonts used by the Figma designs[^\n]*\n\/\/ e\.g\.[^\n]*\nexport \{\};\s*$/.test(cur)) write(dest, content);
+    else {
+      kept.push(dest);
+      notes.push('demo/fonts.ts изменён вручную и оставлен как есть. Шрифты теперь задаются в craftui.config.json → demoFonts: перенеси туда ссылки и верни файл из шаблона.');
+    }
   } else if (dest === 'AGENTS.md' && exists) {
     const cur = fs.readFileSync(destFile, 'utf8');
     if (cur.includes('<!-- craftui:start -->')) {
@@ -138,4 +155,5 @@ fs.cpSync(path.join(skillDir, 'references'), path.join(docsDir, 'references'), {
 console.log(`craftui ${update ? 'обновлён' : 'готов'} в ${target}`);
 console.log(`  создано: ${created.length}, обновлено: ${updated.length}, без изменений: ${kept.length}`);
 if (updated.length) console.log(`  обновлены: ${updated.join(', ')}`);
+for (const note of notes) console.log(`  ⚠ ${note}`);
 console.log('Дальше: npm install --no-audit --no-fund > .craftui/install.log 2>&1 && npx playwright install chromium');

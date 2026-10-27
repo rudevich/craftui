@@ -1,6 +1,6 @@
 ---
 name: craftui
-argument-hint: "<ссылка Figma> [chrome|figma] | continue [Name] | fix <Name> <задача> | resync <Name> | status | help"
+argument-hint: "<ссылка Figma> [component|page] [chrome|figma] | continue [Name] | fix <Name> <задача> | resync <Name> | status | help"
 description: Импорт компонентов из Figma (в т.ч. целых UI-китов) в React 19 + CSS Modules — библиотека на rspack с демо-страницами, общими токенами, скриншот-тестами (Playwright) и rstest. Используй, когда пользователь даёт ссылку на компонент или UI-кит в Figma и просит сделать/импортировать React-компоненты; просит продолжить импорт (есть craftlog/craftui.log.md); даёт правки к импортированному компоненту; просит пересинхронизировать с макетом; или пишет «craftui help». Данные берутся через Figma MCP или через Chrome (браузерный MCP). Imports Figma components / UI kits into a React 19 CSS-Modules rspack library with demo pages and screenshot tests.
 ---
 
@@ -11,7 +11,7 @@ description: Импорт компонентов из Figma (в т.ч. целы�
 ## Аргументы вызова
 
 - `help`, `помощь`, `?` → кратко перескажи `<skill>/references/help.md` и больше ничего не делай.
-- `<ссылка Figma> [через chrome | через figma]` → новый импорт (A). Источник по умолчанию — chrome (Chrome MCP); figma — Figma MCP.
+- `<ссылка Figma> [component | page] [через chrome | через figma]` → новый импорт (A). По умолчанию component (`defaultKind` конфига) и chrome (Chrome MCP); page — адаптивная страница (`references/kind-page.md`), figma — Figma MCP.
 - `continue [Name]`, «продолжи» → продолжение (B).
 - `fix <Name> <задача>`, «поправь …» → правки (C).
 - `resync <Name>`, «макет изменился» → ресинк (D).
@@ -38,12 +38,12 @@ npm run craftui -- begin <Name> <step>
 npm run craftui -- done <Name> <step>
 ```
 
-Повторяй до конца: extract → normalize → confirm → screenshots → deps → tokens → scaffold → code → tests → verify → report. На шаге confirm свойства подтверждает пользователь.
+Повторяй до конца: extract → normalize → confirm → screenshots → deps → tokens → scaffold → code → tests → verify → report. На confirm пользователь подтверждает свойства (у страницы — брейкпоинты, части, компоненты). Настройки — `craftui.config.json`.
 
 ## Сценарии (подробно — `references/workflows.md`)
 
 - **Вход.** Есть `craftui.config.json` → `status`; нет проекта → предложи `node <skill>/scripts/init-project.mjs` и `npm install`.
-- **A. Новый импорт.** `craftui url` → источник (chrome по умолчанию / figma) → разведка → план и имя → `craftui new component <Name> "<ссылка>" --source …` → цикл.
+- **A. Новый импорт.** `craftui url` → вид и источник → разведка → план и имя → `craftui new [component|page] <Name> "<ссылка>"` → цикл. Странице нужны брейкпоинты конфига: не заданы — спроси пользователя (`kind-page.md`).
 - **B. Продолжение.** `next` → план оставшихся шагов → цикл.
 - **C. Правки.** Лог и файлы компонента → план → правка → `craftui verify <Name>` → `craftui log`. Отход от макета — в «Отклонения» лога и порог или маска с reason.
 - **D. Ресинк.** `craftui reopen <Name> extract "<причина>"` → extract, normalize `--keep`, screenshots → `scaffold --add-targets` → verify.
@@ -56,5 +56,6 @@ npm run craftui -- done <Name> <step>
 | `references/help.md` | вызов `help`, вопросы про команды, маленькое окно модели |
 | `references/figma-chrome.md` / `figma-mcp.md` | трудности на шаге extract |
 | `references/kind-component.md` | API из вариантов, интерактивные компоненты, UI-кит, демо |
+| `references/kind-page.md` | страницы: брейкпоинты, части, компоненты на странице, container queries |
 | `references/code-conventions.md` | спорные места в коде |
 | `references/tokens.md`, `verify.md`, `log-format.md`, `recovery.md` | токены; пороги и маски; лог и отчёт; сбои |

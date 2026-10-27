@@ -279,3 +279,84 @@ describe('data source', () => {
     expect(resolveSource('browser')).toBeUndefined();
   });
 });
+
+describe('project settings', () => {
+  it('nested blocks merge key by key; problems are reported, not thrown', async () => {
+    const { withDefaults, configProblems } = await import('./lib.mjs');
+    const cfg = withDefaults({ dirs: { page: 'src/screens' }, pages: { scale: 2 } });
+    expect(cfg.dirs).toEqual({ component: 'src/components', page: 'src/screens' });
+    expect(cfg.pages).toMatchObject({ scale: 2, maxDiffRatio: 0.02, export: true, breakpoints: null });
+    expect(cfg.context).toBe('small');
+    expect(configProblems(cfg)).toEqual([]);
+    const bad = configProblems(withDefaults({ dirs: { component: 'src/ui/components' }, defaultKind: 'widget', context: 'huge' }));
+    expect(bad.join('\n')).toMatch(/dirs.component/);
+    expect(bad.join('\n')).toMatch(/defaultKind/);
+    expect(bad.join('\n')).toMatch(/context/);
+  });
+
+  it('breakpoints from the answers: empty tablet — none, empty desktop — open-ended, a desktop bound adds large desktop', async () => {
+    const { breakpointsFrom, breakpointOf, breakpointProblems, describeBreakpoints } = await import('./lib.mjs');
+    const bp = breakpointsFrom({ mobile: '767', tablet: '1279', desktop: '' });
+    expect(bp).toEqual({ mobile: { max: 767 }, tablet: { min: 768, max: 1279 }, desktop: { min: 1280 }, largeDesktop: null });
+    expect(describeBreakpoints(bp)).toBe('mobile ≤ 767px · tablet 768–1279px · desktop ≥ 1280px');
+    expect(breakpointsFrom({ mobile: 599, tablet: '', desktop: 1919 })).toEqual({ mobile: { max: 599 }, tablet: null, desktop: { min: 600, max: 1919 }, largeDesktop: { min: 1920 } });
+    expect([375, 768, 1279, 1440].map((w) => breakpointOf(w, bp))).toEqual(['mobile', 'tablet', 'tablet', 'desktop']);
+    expect(() => breakpointsFrom({ mobile: 700, tablet: 600 })).toThrow(/tablet/);
+    expect(breakpointProblems({ mobile: { max: 767 }, desktop: { min: 1000 } })[0]).toMatch(/768/);
+  });
+});
+
+describe('page drafts', () => {
+  const bp = { mobile: { max: 767 }, desktop: { min: 1280 } };
+  const node = (key, css, extra = {}) => ({ key, type: 'FRAME', box: { w: 100, h: 10 }, css, ...extra });
+  const frame = (w, desktop) => ({
+    id: desktop ? 'desktop' : 'mobile',
+    breakpoint: desktop ? 'desktop' : 'mobile',
+    size: { width: w, height: 800 },
+    frame: { width: w },
+    props: {},
+    tree: node('root', { display: 'flex', padding: desktop ? '32px' : '16px', width: `${w}px` }, {
+      children: [
+        node('root/hero', { 'flex-direction': desktop ? 'row' : 'column' }),
+        ...(desktop ? [node('root/nav', { display: 'flex', gap: '32px' })] : [node('root/menu', { color: 'red' })]),
+        node('root/cta', { padding: '12px', 'align-self': 'stretch' }, { instance: { key: 'k', name: 'Button', variant: { Size: desktop ? 'L' : 'M' } } }),
+      ],
+    }),
+  });
+  const spec = { name: 'Landing', targets: [frame(1440, true), frame(375, false)], instances: [{ key: 'k', name: 'Button', resolution: 'entity:component/BasicButton' }], parts: [] };
+  const map = { root: 'frame', 'root/hero': 'hero', 'root/nav': 'Header/nav', 'root/menu': 'Header/menu', 'root/cta': 'cta' };
+
+  it('mobile first, the borders come from the settings, not from the frame widths', async () => {
+    const { pageCss } = await import('./digest-page.mjs');
+    const css = pageCss('Landing', spec, map, bp);
+    const page = css.get('');
+    expect(page).toContain('.root {\n  container-type: inline-size;\n  width: 100%;\n}');
+    expect(page).toContain('.frame {\n  display: flex;\n  padding: 16px;\n  width: 100%;\n}');
+    expect(page).toContain('@container (min-width: 1280px) {');
+    expect(page).not.toContain('1440px) {');
+    expect(page).toMatch(/\.cta \{\n {2}align-self: stretch;\n\}/); // a component keeps only its placement
+    const header = css.get('Header');
+    expect(header).toContain('.nav {\n  display: none;\n}');
+    expect(header).toMatch(/@container \(min-width: 1280px\) \{[\s\S]*\.menu \{\n {4}display: none;/);
+  });
+
+  it('union of the breakpoints in the widest order, a component with props of the narrowest frame', async () => {
+    const { markup, markupContext, unionTree } = await import('./digest-page.mjs');
+    const ctx = markupContext(spec, map, '');
+    ctx.compSpec = () => ({ props: [{ figma: 'Size', role: 'prop', react: 'size', default: 'M', map: { M: 'm', L: 'l' } }] });
+    const lines = markup(unionTree(spec.targets), ctx);
+    expect(lines[0]).toBe('<div className={styles.frame}>');
+    // A layer only the narrow frame has comes right after its sibling there (menu after hero), the rest keeps the widest order.
+    const at = (cls) => lines.findIndex((l) => l.includes(`styles.${cls}`));
+    expect([at('hero') + 1, at('menu') + 1]).toEqual([at('menu'), at('nav')]);
+    expect(lines.some((l) => l.includes('меняется с шириной') && l.includes('size="l"'))).toBe(true);
+    expect(lines).toContain('  <BasicButton className={styles.cta} />');
+    expect([...ctx.imports.components]).toEqual(['BasicButton']);
+  });
+
+  it('page cards are within the budget', async () => {
+    const { STEPS, instructions } = await import('./steps.mjs');
+    const e = { kind: 'page', name: 'Landing', dir: 'src/pages/Landing', craftlog: 'src/pages/Landing/craftlog' };
+    for (const [id] of STEPS.page) expect(instructions(e, { figma: { url: 'u' } }, id).join('\n').length).toBeLessThan(1000);
+  });
+});

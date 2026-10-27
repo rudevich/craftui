@@ -81,7 +81,7 @@ export function run(ref, { grep, unit, visual }) {
         lines.push(...tail(r.output, 8).map((l) => `  ${l}`));
       } else {
         if (passed.length !== results.length) ok = false;
-        const threshold = visualConfig?.default?.maxDiffRatio ?? config().maxDiffRatio;
+        const threshold = visualConfig?.default?.maxDiffRatio ?? (e.kind === 'page' ? config().pages.maxDiffRatio : config().maxDiffRatio);
         lines.push(`visual ${passed.length === results.length ? '✓' : '✗'} ${passed.length}/${results.length} (порог ${(threshold * 100).toFixed(1)}%)${skipped.length ? `, пропущено ${skipped.length}` : ''}`);
         for (const id of skipped) lines.push(`  ${id}: пропущен — ${visualConfig.targets[id].reason ?? 'без причины: допиши reason'}`);
         // Worst first: fixing the biggest difference often fixes several smaller ones too.

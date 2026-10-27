@@ -39,7 +39,7 @@ function demoTarget(t) {
 
 export function run(ref, force, addOnly) {
   const e = findEntity(ref);
-  if (e.kind !== 'component') fail(`scaffold для вида ${e.kind} пока не поддержан`);
+  if (e.kind === 'page') return import('./scaffold-page.mjs').then((m) => m.run(e, force, addOnly));
   const spec = readJson(e.specFile) ?? fail(`нет spec.json — npm run craftui -- normalize ${e.name}`);
   if (addOnly) return addTargets(e, spec);
   const nodeMap = readJson(path.join(e.craftlog, 'figma', 'node-map.json'), { root: 'root' });

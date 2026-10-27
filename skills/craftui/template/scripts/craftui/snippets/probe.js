@@ -31,7 +31,15 @@
           } catch {}
         }
         if (node.type === 'COMPONENT_SET') out.node.variants = node.children.length;
-        if (node.type === 'PAGE') out.node.hint = 'ссылка на страницу: выбери компонент из components и запусти probe по его id';
+        if (node.type === 'PAGE') out.node.hint = 'страница Figma: для компонента выбери его из components, для экрана — фреймы-брейкпоинты из frames';
+        // A screen to import as a page: the frames of its breakpoints and the range each width falls into.
+        const RANGES = ['mobile', 'tablet', 'desktop', 'largeDesktop'].filter((n) => CU.breakpoints?.[n]).map((n) => ({ name: n, min: CU.breakpoints[n].min ?? 0, max: CU.breakpoints[n].max ?? Infinity }));
+        const range = (w) => RANGES.find((r) => w >= r.min && w <= r.max)?.name ?? (RANGES.length ? 'вне диапазонов' : 'брейкпоинты не заданы');
+        if ('children' in node && ['PAGE', 'SECTION', 'FRAME', 'GROUP'].includes(node.type)) {
+          const frames = node.children.filter((c) => c.type === 'FRAME' || c.type === 'COMPONENT' || c.type === 'INSTANCE').slice(0, 50);
+          if (frames.length) out.node.frames = frames.map((c) => ({ id: c.id, name: c.name, width: Math.round(c.width), height: Math.round(c.height), range: range(c.width) }));
+        }
+        if (node.type === 'FRAME') out.node.range = range(node.width);
         if (node.type === 'INSTANCE') out.node.main = (await node.getMainComponentAsync())?.name;
         if ('findAll' in node) {
           if (node.type !== 'COMPONENT_SET' && node.type !== 'COMPONENT' && node.type !== 'INSTANCE') {

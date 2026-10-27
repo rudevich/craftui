@@ -12,6 +12,8 @@ const px = (v) => `${r2(v)}px`;
 
 export function run(ref, { summary, keep }) {
   const e = findEntity(ref);
+  // Pages have a pipeline of their own: breakpoint frames, parts, components used on the page.
+  if (e.kind === 'page') return import('./normalize-page.mjs').then((m) => m.run(e, { summary, keep }));
   const raw = path.join(e.craftlog, 'figma', 'raw');
   const previous = readJson(e.specFile);
   if (summary) {
@@ -129,7 +131,7 @@ const color = ({ r, g, b, a = 1 }, opacity = 1) => {
 };
 const UNITLESS_SCOPES = ['FONT_WEIGHT', 'OPACITY'];
 
-function buildTokens(raw, ctx) {
+export function buildTokens(raw, ctx) {
   const vars = new Map(raw.variables.map((v) => [v.id, v]));
   const cols = new Map(raw.collections.map((c) => [c.id, c]));
   // "01. Theme" → "Theme": kits number their collections; copies of a library collection share the name.
@@ -511,6 +513,7 @@ const hasLayout = (n) =>
   (['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'].some((k) => (n[k] ?? 0) > 0) || (n.itemSpacing ?? 0) > 0);
 
 function isGraphic(n) {
+  if (n.image) return false; // a picture (photo, avatar) is a PNG, not a vector asset
   if (VECTOR.has(n.type)) return true;
   if (!SHAPE.has(n.type) || !n.children?.length) return false;
   // A variant itself is never an asset (an icon-only button has no text, only frames and vectors).
@@ -657,6 +660,7 @@ export function normNode(n, key, ctx) {
     if (n.fontName?.family) ctx.fonts.set(`${n.fontName.family}`, { family: n.fontName.family, styles: [...new Set([...(ctx.fonts.get(n.fontName.family)?.styles ?? []), n.fontName.style])] });
   }
   if (n.componentPropertyReferences) node.propRefs = n.componentPropertyReferences;
+  if (n.image) node.image = true; // filled with a picture: a page renders it as <img>
   if (n.type === 'INSTANCE' && n.instanceOf) {
     node.instance = {
       key: n.instanceOf.set?.key ?? n.instanceOf.key,
@@ -781,7 +785,7 @@ function keepManualEdits(spec, previous) {
 }
 
 // Proposed CSS-module class per layer key; the agent may edit node-map.json, normalize keeps existing entries.
-function writeNodeMap(e, spec) {
+export function writeNodeMap(e, spec) {
   const file = path.join(e.craftlog, 'figma', 'node-map.json');
   // Keys no target has any more (layers renamed, wrappers collapsed) are dropped.
   const keys = new Set();

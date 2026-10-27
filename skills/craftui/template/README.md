@@ -89,8 +89,10 @@ import { Name } from '__PACKAGE_NAME__/Name'; // или все сразу: from 
 ## Структура
 
 - `src/components/<Name>/` — компонент: `<Name>.tsx`, `types.ts`, `styles.module.css`, `index.ts`, демо `<Name>.demo.tsx`, `README.md` и `craftlog/` (данные из Figma, журнал импорта, тесты);
+- `src/pages/<Page>/` — адаптивная страница из Figma (фрейм на брейкпоинт): то же устройство, плюс `parts/` (внутренние части) и `assets/` (картинки); подключение — `<pkg>/pages/<Page>`;
 - `src/lib/` — общий код компонентов (`cx`, общие стили и части);
 - `src/tokens.css` — токены дизайна;
 - `demo/` — приложение демо, `tests/` — общий код скриншот-тестов, `scripts/` — `gen` и `craftui`;
+- `craftui.config.json` — настройки: источник данных, папки, брейкпоинты страниц, шрифты демо, пороги проверки;
 - `.craftui/` — инструкции скилла и служебные файлы.
 <!-- craftui:end -->

@@ -9,9 +9,14 @@ type TargetConfig = { maxDiffRatio?: number; threshold?: number; mask?: Box[]; s
 type SpecNode = { key: string; slot?: string; css?: Record<string, string>; expect?: Record<string, string>; children?: SpecNode[] };
 
 const config = JSON.parse(fs.readFileSync('craftui.config.json', 'utf8'));
+// Pages have references of their own scale and threshold (craftui.config.json → pages).
+const pagesFolder = (config.dirs?.page ?? 'src/pages').split('/').pop();
 const readJson = (file: string) => (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : undefined);
 
 export function describeVisual(name: string, kind = 'components') {
+  const isPage = kind === pagesFolder;
+  const scale = isPage ? (config.pages?.scale ?? 1) : config.scale;
+  const defaultMaxDiff = isPage ? (config.pages?.maxDiffRatio ?? 0.02) : config.maxDiffRatio;
   const root = path.join('src', kind, name, 'craftlog');
   const shots = path.join(root, 'figma', 'screenshots');
   const out = path.join(root, 'visual', 'output');
@@ -46,7 +51,7 @@ export function describeVisual(name: string, kind = 'components') {
           : await target.screenshot({ omitBackground: true, animations: 'disabled', caret: 'hide' });
         fs.writeFileSync(path.join(out, `${id}.actual.png`), actual);
         const result = compare(fs.readFileSync(path.join(shots, `${id}.png`)), actual, {
-          scale: config.scale,
+          scale,
           threshold: t.threshold,
           masks: t.mask,
         });
@@ -54,7 +59,7 @@ export function describeVisual(name: string, kind = 'components') {
 
         const tree = spec?.targets?.find((x: { id: string }) => x.id === id)?.tree;
         const styleIssues = tree ? await styleCheck(target, name, tree, nodeMap) : [];
-        const maxDiffRatio = t.maxDiffRatio ?? config.maxDiffRatio;
+        const maxDiffRatio = t.maxDiffRatio ?? defaultMaxDiff;
         const pass = result.diffRatio <= maxDiffRatio && !result.sizeMismatch;
         // Style issues name the exact property to fix, so they go right after the headline.
         const [headline, ...details] = describeResult(result);
@@ -82,7 +87,9 @@ async function styleCheck(target: Locator, folder: string, tree: SpecNode, nodeM
     const opacity = inherited * Number(node.expect?.opacity ?? 1);
     const swap = turned !== quarterTurn(node);
     const expect = swap && node.expect ? { ...node.expect, width: node.expect.height, height: node.expect.width } : node.expect;
-    if (expect && nodeMap[node.key]) checks.push({ key: node.key, className: `${folder}__${nodeMap[node.key]}`, expect: Object.fromEntries(Object.entries(expect).filter(([, v]) => v !== undefined)) as Record<string, string>, opacity });
+    // A page part keeps its classes in its own folder: "LandingHero/title" → LandingHero__title.
+    const cls = nodeMap[node.key];
+    if (expect && cls) checks.push({ key: node.key, className: cls.includes('/') ? cls.replace('/', '__') : `${folder}__${cls}`, expect: Object.fromEntries(Object.entries(expect).filter(([, v]) => v !== undefined)) as Record<string, string>, opacity });
     node.children?.forEach((child) => walk(child, opacity, swap));
   };
   walk(tree);

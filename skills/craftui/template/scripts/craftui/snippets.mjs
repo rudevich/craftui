@@ -7,6 +7,9 @@ import { sourcesOf } from './sources.mjs';
 
 const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'snippets');
 const STEPS = ['probe', 'extract', 'export'];
+// Pages have snippets of their own (breakpoint frames, pictures); the layer serializer is shared (snippets/lib/core.js).
+const fileOf = (kind, step) => (kind === 'page' && step !== 'probe' ? `${step}-page.js` : `${step}.js`);
+const readSnippet = (kind, step) => fs.readFileSync(path.join(DIR, fileOf(kind, step)), 'utf8').replace('/*@core*/', () => fs.readFileSync(path.join(DIR, 'lib', 'core.js'), 'utf8').trim());
 
 function params(e, step) {
   const cfg = config();
@@ -18,21 +21,23 @@ function params(e, step) {
     fileKey: source.fileKey,
     craftlog: e.craftlog.split(path.sep).join('/'),
     receiver: `http://127.0.0.1:${cfg.receiverPort ?? 4601}`,
-    scale: cfg.scale ?? 2,
+    scale: e.kind === 'page' ? cfg.pages.scale : cfg.scale,
+    breakpoints: cfg.pages.breakpoints,
   };
+  if (e.kind === 'page') p.maxNodes = 15000; // a screen holds far more layers than a component
   if (step === 'extract') p.sources = sourcesOf(e).sources.map(({ nodeId, variant, filter }) => ({ nodeId, variant, filter }));
   if (step === 'export') {
     const spec = readJson(e.specFile);
     if (!spec) fail(`нет ${e.specFile} — сначала npm run craftui -- normalize ${e.name}`);
     p.targets = spec.targets.map((t) => ({ id: t.id, nodeId: t.figmaNodeId }));
-    p.assets = (spec.assets ?? []).map((a) => ({ nodeId: a.nodeId, file: a.file }));
+    p.assets = (spec.assets ?? []).map((a) => ({ nodeId: a.nodeId, file: a.file, format: a.format }));
   }
   return p;
 }
 
 export function renderSnippet(e, step) {
   if (!STEPS.includes(step)) throw new Error(`snippet: ${STEPS.join('|')}`);
-  const code = fs.readFileSync(path.join(DIR, `${step}.js`), 'utf8').replace('__CU__', JSON.stringify(params(e, step)));
+  const code = readSnippet(e.kind, step).replace('__CU__', JSON.stringify(params(e, step)));
   // Long runs may outlive the browser tool's timeout: the result is also kept in window.__craftui.
   return `((p) => { window.__craftui = { step: '${step}', status: 'running' }; p.then((result) => { window.__craftui = { step: '${step}', status: 'done', result }; }, (err) => { window.__craftui = { step: '${step}', status: 'error', error: String(err) }; }); return p; })(${code.trim()})`;
 }
@@ -43,7 +48,7 @@ export function run([ref, step]) {
   if (figma) {
     if (step !== 'probe') fail('по ссылке доступен только probe; для extract/export сначала npm run craftui -- new …');
     const cfg = config();
-    const p = { nodeId: figma.nodeId, fileKey: figma.fileKey, receiver: `http://127.0.0.1:${cfg.receiverPort ?? 4601}` };
+    const p = { nodeId: figma.nodeId, fileKey: figma.fileKey, receiver: `http://127.0.0.1:${cfg.receiverPort ?? 4601}`, breakpoints: cfg.pages.breakpoints };
     console.log('// Выполни в странице Figma (javascript_tool / evaluate_script), результат — JSON:');
     console.log(fs.readFileSync(path.join(DIR, 'probe.js'), 'utf8').replace('__CU__', JSON.stringify(p)));
     return;

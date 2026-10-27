@@ -1,3 +1,4 @@
+import config from '../craftui.config.json';
 import type { Demo } from './defineDemo';
 import propsJson from './.generated/props.json';
 
@@ -12,7 +13,7 @@ export type PropDoc = {
 };
 
 export type Entity = {
-  kind: string; // folder under src/: components (pages later)
+  kind: string; // folder under src/ (craftui.config.json → dirs): components, pages
   name: string;
   demo: Demo<any>;
   props: PropDoc[];
@@ -20,7 +21,9 @@ export type Entity = {
   pseudo: string[];
 };
 
-export const KIND_TITLES: Record<string, string> = { components: 'Компоненты', pages: 'Страницы' };
+const dirs: Record<string, string> = { component: 'src/components', page: 'src/pages', ...(config as { dirs?: Record<string, string> }).dirs };
+const folder = (dir: string) => dir.split('/').pop() ?? dir;
+export const KIND_TITLES: Record<string, string> = { [folder(dirs.component)]: 'Компоненты', [folder(dirs.page)]: 'Страницы' };
 
 const context = import.meta.webpackContext('../src', { recursive: true, regExp: /\.demo\.tsx$/ });
 const metaByEntity = propsJson as Record<string, { props: PropDoc[]; pseudo: string[] }>;

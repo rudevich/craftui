@@ -1,9 +1,7 @@
 // Compact views of spec.json for agents with a small context window: the CSS and markup drafts that scaffold writes,
 // the brief for the code step (`craftui brief`) and bounded look-ups (`craftui spec`). spec.json itself is far too big to read.
 import path from 'node:path';
-import { fail, findEntity, readJson } from './lib.mjs';
-
-const LIMIT = 12000; // characters of one printout: about 4k tokens
+import { fail, findEntity, printLimit, readJson } from './lib.mjs';
 const kebab = (s) => s.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
 
 export const defaultTarget = (spec) => spec.targets.find((t) => t.id === 'default') ?? spec.targets[0];
@@ -57,7 +55,7 @@ const label = (diff) => diff.map(([k, v]) => (k.startsWith('p:') ? `:${k.slice(2
 const CORNERS = ['border-top-left-radius', 'border-top-right-radius', 'border-bottom-left-radius', 'border-bottom-right-radius'];
 
 // `frame`: the target is shown in a fixed wrapper (Fill in Figma), so the root fills it instead of a fixed width.
-function decls(node, isRoot, frame) {
+export function decls(node, isRoot, frame) {
   const out = {};
   const tok = node.tokens ?? {};
   for (const [p, raw] of Object.entries(node.css ?? {})) {
@@ -84,7 +82,7 @@ function decls(node, isRoot, frame) {
 
 // Declarations per class in a target. Layers sharing a class (a wrapper and its text) add up, the first one wins a clash.
 // Slot content and hidden layers belong elsewhere.
-function classDecls(target, nodeMap) {
+export function classDecls(target, nodeMap) {
   const out = {};
   const walk = (node, isRoot) => {
     if (node.hidden || node.slot) return;
@@ -102,7 +100,7 @@ const applyTo = (into, over) => {
 };
 
 // What `actual` sets differently from `expected`, per class present in both (absent → unset).
-function residual(actual, expected, { requireBoth = true } = {}) {
+export function residual(actual, expected, { requireBoth = true } = {}) {
   const out = {};
   for (const [cls, d] of Object.entries(actual)) {
     const e = expected[cls];
@@ -169,7 +167,7 @@ export function analyze(spec, nodeMap, tag) {
 
 // ── CSS draft ─────────────────────────────────────────────────────────────────
 
-const block = (sel, d) => `${sel} {\n${Object.entries(d).map(([p, v]) => `  ${p}: ${v};\n`).join('')}}\n`;
+export const block = (sel, d) => `${sel} {\n${Object.entries(d).map(([p, v]) => `  ${p}: ${v};\n`).join('')}}\n`;
 const childSel = (rootSel, cls) => (cls === 'root' ? rootSel : `${rootSel} .${cls}`);
 
 export function cssDraft(name, spec, nodeMap, tag) {
@@ -235,7 +233,8 @@ export function markupDraft(spec, nodeMap, indent = '      ') {
 
 // ── brief and look-ups ────────────────────────────────────────────────────────
 
-const cap = (lines, limit = LIMIT, hint = '') => {
+// One printout stays within the model's window budget: craftui.config.json → context (small ≈ 4k tokens).
+export const cap = (lines, limit = printLimit(), hint = '') => {
   const out = [];
   let size = 0;
   for (const [i, l] of lines.entries()) {
@@ -251,8 +250,9 @@ const cap = (lines, limit = LIMIT, hint = '') => {
 
 const oneLine = (d) => Object.entries(d).map(([p, v]) => `${p}: ${v}`).join('; ');
 
-export function brief(ref) {
+export async function brief(ref) {
   const { e, spec, nodeMap } = load(ref);
+  if (e.kind === 'page') return (await import('./digest-page.mjs')).pageBrief(e, spec, nodeMap);
   return briefOf(e.name, spec, nodeMap);
 }
 
@@ -290,7 +290,7 @@ export function briefOf(n, spec, nodeMap) {
     '',
     `Дальше: доведи ${n}.tsx (логика, пропсы, доступность) и стили, затем npm run gen && npm run typecheck && npm run craftui -- verify ${n}.`,
   );
-  return cap(lines, LIMIT, `полный список — npm run craftui -- spec ${n}`);
+  return cap(lines, printLimit(), `полный список — npm run craftui -- spec ${n}`);
 }
 
 function collectTokens(node, out = []) {
@@ -315,7 +315,7 @@ export function query(ref, targetId, nodeKey, depth = 3) {
     const base = defaultTarget(spec);
     return cap(
       [`${e.name}: ${spec.targets.length} targets (отличия от "${base.id}")`, ...spec.targets.map((t) => `  ${t.id}: ${label(diffKeys(t, base, axes)) || '—'}`)],
-      LIMIT,
+      printLimit(),
       'сузь запрос: spec <Name> <target>',
     );
   }
@@ -333,5 +333,5 @@ export function query(ref, targetId, nodeKey, depth = 3) {
     else if (node.children?.length) lines.push(`${'  '.repeat(d + 1)}… ${node.children.length} вложенных — spec ${e.name} ${targetId} ${node.children[0].key}`);
   };
   walk(start, 0);
-  return cap(lines, LIMIT, 'сузь: укажи слой или --depth');
+  return cap(lines, printLimit(), 'сузь: укажи слой или --depth');
 }

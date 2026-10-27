@@ -9,6 +9,7 @@
 | `craftui <ссылка на компонент Figma>` | новый импорт через Chrome MCP (источник по умолчанию; другой — в `source` конфига) |
 | `craftui <ссылка> через figma` / `через chrome` | новый импорт через Figma MCP / Chrome MCP |
 | `craftui <ссылка на страницу UI-кита>` | список компонентов кита → выбор → пакетный импорт |
+| `craftui <ссылка на экран> page` | адаптивная страница в `src/pages/<Page>/`: фрейм на брейкпоинт, части, компоненты из `src/components` (`kind-page.md`) |
 | `craftui continue` / «продолжи импорт» | продолжение с места остановки |
 | `craftui fix Button: hover темнее, иконка 16px` | правки импортированного компонента |
 | `craftui resync Button` | пересинхронизация с изменившимся макетом |
@@ -49,6 +50,8 @@
 | `url`, `receiver`, `snippet`, `put`, `rest-images` | работа с Figma |
 | `normalize [--keep] [--summary]`, `deps [--inline <имя> \| --inline-all \| --same <имя> <Entity>]`, `tokens` | spec.json, вложенные компоненты (встроить, встроить всё, двойник сущности), токены |
 | `slot <Name> <@ключ… \| Ось=Значение> <prop>` | слой (иконка во всех вариантах) или значение оси — содержимое пропа: `slot IconButton @root/content children` |
+| `breakpoints [mobile=<px> tablet=<px\|> desktop=<px\|>]` | брейкпоинты страниц в конфиге (верхние границы включительно, пусто — не нужен) |
+| `part <Page> <слой> <Имя> [--remove]` | слой страницы — её внутренняя часть `parts/<Page><Имя>/` |
 | `prop <Name> "<свойство Figma>" <имя React \| -> [тип] [--role …]` | правка или добавление свойства на шаге confirm без открытия spec.json |
 | `scaffold [--force] [--add-targets]`, `svg <Name> <asset> <Icon>` | заготовки и черновики кода (разметка по слоям, стили по вариантам), новые targets в демо, TSX-иконки из ассетов (без пустых clipPath во весь размер) |
 | `brief <Name>`, `spec <Name> [<target>] [<слой>]` | выжимка spec.json для кода (~4k токенов) и точечный просмотр слоёв; сам spec.json не открывать |
@@ -63,9 +66,10 @@
 
 ```
 README.md                 о библиотеке и её npm-командах (блок между <!-- craftui:start/end --> обновляет init --update)
-craftui.config.json    source, scale (2), maxDiffRatio (0.01), tokenPrefix, port (4600), receiverPort (4601), autopilot
+craftui.config.json       настройки проекта (раздел «Конфиг проекта» ниже)
 src/tokens.css            общие токены (переменные и стили Figma), темы через [data-theme]
 src/components/<Name>/    index.ts, <Name>.tsx, styles.module.css, types.ts, …, <Name>.demo.tsx
+src/pages/<Page>/         то же для страницы + parts/<Page><Part>/ и assets/ (kind-page.md)
   README.md               свойства, версия и дата импорта, проверка, история версий (генерируется)
   craftlog/
     craftui.log.md     журнал импорта: источник, шаги, свойства, targets, отклонения, история
@@ -73,15 +77,34 @@ src/components/<Name>/    index.ts, <Name>.tsx, styles.module.css, types.ts, …
     figma/                всё выкачанное: raw/, spec.json, node-map.json, screenshots/, assets/
     visual/               скриншот-тест, visual.config.json, output/ (actual, diff)
     tests/                rstest
-demo/                     демо-приложение; demo/fonts.ts — шрифты макета
+demo/                     демо-приложение (шрифты макета — demoFonts в конфиге)
 .craftui/              служебное: копия инструкций скилла, логи установки
 ```
+
+## Конфиг проекта
+
+`craftui.config.json` в корне проекта. Новые ключи `init --update` дописывает сам, ваши значения не трогает.
+
+| Ключ | По умолчанию | Что задаёт |
+|---|---|---|
+| `source` | `chrome` | откуда данные: chrome (Chrome MCP) или figma (Figma MCP) |
+| `defaultKind` | `component` | вид, если в запросе не сказано `component` / `page` |
+| `dirs` | `src/components`, `src/pages` | папки сущностей, только `src/<имя>` на один уровень |
+| `context` | `small` | окно модели: small (~64k) — короткие выводы brief / spec, large — подробнее |
+| `verifyIterations` | `5` | сколько итераций verify до вопроса пользователю |
+| `demoFonts` | `[]` | ссылки на CSS шрифтов макета для демо и скриншот-тестов |
+| `scale`, `maxDiffRatio` | `2`, `0.01` | масштаб PNG-эталонов и порог сравнения компонентов |
+| `pages` | — | `breakpoints` (команда `craftui breakpoints`), `scale` (1), `maxDiffRatio` (0.02), `export` (страницы в сборке как `<pkg>/pages/<Page>`) |
+| `tokenPrefix`, `port`, `receiverPort`, `autopilot` | | префикс токенов, порт демо, порт receiver, команды автопилота |
+
+`npm run craftui -- status` показывает ошибки конфига.
 
 ## Использование библиотеки
 
 ```ts
 import '<pkg>/tokens.css';            // один раз в приложении
 import { Button } from '<pkg>/Button'; // CSS компонента подтянется сам
+import { Landing } from '<pkg>/pages/Landing'; // страница (pages.export)
 ```
 
 Шрифты из макета подключает приложение.
@@ -133,6 +156,6 @@ Claude Code должен знать настоящее окно модели. И
 - `CLAUDE_CODE_AUTO_COMPACT_WINDOW` не подходит: у него минимум 100000.
 - Если ошибка всё же случилась — `/compact` в той же сессии, перезапуск не нужен.
 
-## Скоро
+## Ограничения
 
-Вид **page** — экраны целиком (брейкпоинты, композиция из импортированных компонентов). Структура `src/pages/<Name>/craftlog/` и все команды craftui уже рассчитаны на него.
+- Страницы импортируются только через Chrome MCP; Figma MCP для них пока не поддержан.

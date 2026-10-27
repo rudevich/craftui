@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  appendHistory, config, fail, findEntity, getStep, KIND_ALIASES, KIND_DIRS, listEntities, newEntity,
+  appendHistory, breakpointsFrom, config, configProblems, describeBreakpoints, fail, findEntity, getStep, KIND_ALIASES, KINDS, listEntities, newEntity,
   now, openBlockers, parseFigmaUrl, readJson, replaceSection, resolveSource, saveState, writeJson,
 } from './lib.mjs';
 import { importsOf, writeReadme } from './readme.mjs';
@@ -15,8 +15,11 @@ const HELP = `craftui — команды (npm run craftui -- <команда>)
 Состояние и продолжение
   status                       сущности проекта, их статус и текущий шаг
   next [Name]                  следующий шаг с точной инструкцией (без Name — по всему проекту с учётом зависимостей)
-  new <kind> <Name> <url> [--source chrome|figma] [--parent Name] [--variant "Size=M"] [--filter <json|file>]
-                               источник: chrome — Chrome MCP (по умолчанию), figma — Figma MCP
+  new [component|page] <Name> <url> [--source chrome|figma] [--parent Name] [--variant "Size=M"] [--filter <json|file>]
+                               вид по умолчанию — defaultKind конфига (component); источник: chrome — Chrome MCP
+                               (по умолчанию), figma — Figma MCP. Страница: каждый фрейм-брейкпоинт — свой источник
+  breakpoints [mobile=<px> tablet=<px|> desktop=<px|>]   брейкпоинты страниц (верхние границы включительно, пусто —
+                               не нужен); без аргументов — показать
                                создать сущность (kind: component): папку, craftlog, state.json, лог
   source <Name> list | add <url> [--variant …] [--filter …] | filter <i|all> <json|file>
                                наборы Figma, из которых собирается сущность (размеры, outline…), и фильтр вариантов
@@ -44,6 +47,7 @@ Figma
   scaffold <Name> --add-targets   дописать в <Name>.demo.tsx targets, которых там ещё нет (новые варианты, размеры)
   prop <Name> <свойство Figma> <имя React | -> [тип TS] [--role text|bool|slot|prop --default <v>]
                                правка свойства на шаге confirm (targets переименуются тоже); с --role — новое свойство
+  part <Page> <слой> <Имя> [--remove]   слой страницы — её внутренняя часть (parts/<Page><Имя>/), шаг confirm
   brief <Name>                 выжимка spec.json для шага code (~4k токенов): data-атрибуты, пропсы, разметка, стили
   spec <Name> [<target>] [<слой>] [--depth N]   точечный просмотр spec.json: без target — список targets,
                                иначе слои с классами и CSS (spec.json целиком не открывать — он огромный)
@@ -71,7 +75,7 @@ const positional = () => {
   const out = [];
   for (let i = 0; i < args.length; i++) {
     if (args[i].startsWith('--')) {
-      if (args[i + 1] && !args[i + 1].startsWith('--') && !['--summary', '--keep', '--force', '--base64', '--inline', '--add-targets', '--no-unit', '--no-visual'].includes(args[i])) i++;
+      if (args[i + 1] && !args[i + 1].startsWith('--') && !['--summary', '--keep', '--force', '--base64', '--inline', '--add-targets', '--no-unit', '--no-visual', '--remove'].includes(args[i])) i++;
       continue;
     }
     out.push(args[i]);
@@ -82,6 +86,25 @@ const positional = () => {
 const commands = {
   help: () => console.log(HELP),
 
+  // Page breakpoints: upper bounds as the user answers them (inclusive, empty — not needed); writes explicit ranges.
+  breakpoints: () => {
+    const given = Object.fromEntries(args.filter((a) => a.includes('=')).map((a) => a.split('=')));
+    if (!Object.keys(given).length) {
+      const bp = config().pages.breakpoints;
+      return console.log(bp ? `Брейкпоинты страниц: ${describeBreakpoints(bp)}` : 'Брейкпоинты страниц не заданы: npm run craftui -- breakpoints mobile=767 tablet=1279 desktop=');
+    }
+    let bp;
+    try {
+      bp = breakpointsFrom(given);
+    } catch (err) {
+      fail(err.message);
+    }
+    const raw = readJson('craftui.config.json', {});
+    raw.pages = { ...raw.pages, breakpoints: bp };
+    writeJson('craftui.config.json', raw);
+    console.log(`✓ брейкпоинты страниц: ${describeBreakpoints(bp)}`);
+  },
+
   url: () => {
     const parsed = parseFigmaUrl(args[0] ?? '');
     if (!parsed) fail('не похоже на ссылку Figma');
@@ -90,6 +113,8 @@ const commands = {
   },
 
   status: () => {
+    const problems = configProblems(config());
+    if (problems.length) console.log(`⚠ craftui.config.json:\n${problems.map((p) => `  ${p}`).join('\n')}\n`);
     const entities = listEntities();
     if (!entities.length) return console.log('Пока нет сущностей. Новый импорт: npm run craftui -- new component <Name> <figma-url> [--source chrome|figma]');
     for (const e of entities) {
@@ -134,15 +159,22 @@ const commands = {
   },
 
   new: () => {
-    const [kindArg, name, url] = positional();
+    // The kind may be left out: defaultKind of the settings (component unless changed).
+    const pos = positional();
+    const [kindArg, name, url] = KIND_ALIASES[pos[0]] ? pos : [config().defaultKind, ...pos];
     const kind = KIND_ALIASES[kindArg] ?? kindArg;
-    if (!KIND_DIRS[kind]) fail(`kind должен быть: ${Object.keys(KIND_DIRS).join(', ')}`);
+    if (!KINDS.includes(kind)) fail(`вид должен быть: ${KINDS.join(', ')}`);
+    if (kind === 'page' && !config().pages.breakpoints) {
+      fail('брейкпоинты страниц не заданы. Спроси пользователя: mobile — до скольки px включительно; tablet — до скольки (пусто — не нужен); ' +
+        'desktop — до скольки (пусто — без верхней границы, large desktop не нужен). Затем npm run craftui -- breakpoints mobile=767 tablet=1279 desktop=');
+    }
     if (!/^[A-Z][A-Za-z0-9]*$/.test(name ?? '')) fail('имя — PascalCase латиницей, например BasicButton');
     const figma = parseFigmaUrl(url ?? '');
     if (!figma?.nodeId) fail('нужна ссылка Figma с node-id');
     const parent = flag('parent');
     const source = resolveSource(flag('source'), typeof parent === 'string' ? findEntity(parent).state.source : undefined, config().source);
     if (!source) fail('источник: --source chrome (Chrome MCP, по умолчанию) или figma (Figma MCP); так же "source" в craftui.config.json');
+    if (kind === 'page' && source !== 'chrome') fail('страницы пока импортируются только через Chrome MCP: --source chrome');
     const e = newEntity(kind, name);
     if (fs.existsSync(e.stateFile)) fail(`${name} уже есть — продолжай: npm run craftui -- next ${name}`);
 
@@ -249,7 +281,8 @@ const commands = {
   deps: async () => (await import('./deps.mjs')).run(positional()[0], flag('inline'), { all: Boolean(flag('inline-all')), same: flag('same') ? [flag('same'), positional()[1]] : null }),
   tokens: async () => (await import('./tokens.mjs')).run(positional()[0]),
   scaffold: async () => (await import('./scaffold.mjs')).run(positional()[0], Boolean(flag('force')), Boolean(flag('add-targets'))),
-  brief: async () => console.log((await import('./digest.mjs')).brief(positional()[0])),
+  brief: async () => console.log(await (await import('./digest.mjs')).brief(positional()[0])),
+  part: async () => (await import('./normalize-page.mjs')).part(positional(), Boolean(flag('remove'))),
   spec: async () => console.log((await import('./digest.mjs')).query(positional()[0], positional()[1], positional()[2], Number(flag('depth')) || 3)),
   svg: async () => (await import('./svg.mjs')).run(positional()),
   readme: async () => (await import('./readme.mjs')).run(positional()[0]),
