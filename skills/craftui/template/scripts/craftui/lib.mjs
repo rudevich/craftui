@@ -14,6 +14,16 @@ export const writeJson = (file, data) => {
 export const config = () => readJson('craftui.config.json', {});
 export const now = () => new Date().toISOString().slice(0, 16).replace('T', ' ');
 
+/**
+ * Where the Figma data comes from: chrome (Chrome MCP: Claude in Chrome, chrome-devtools-mcp) or figma (Figma MCP).
+ * The first value given wins, chrome by default; "mcp" is the old name of figma. Unknown → undefined.
+ */
+export function resolveSource(...values) {
+  const value = values.find((v) => typeof v === 'string' && v.trim()) ?? 'chrome';
+  const source = value.trim().toLowerCase() === 'mcp' ? 'figma' : value.trim().toLowerCase();
+  return ['chrome', 'figma'].includes(source) ? source : undefined;
+}
+
 export function fail(message) {
   console.error(`✗ ${message}`);
   process.exit(1);

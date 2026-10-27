@@ -72,7 +72,7 @@ export function writeReadme(e) {
     `| Версия импорта | ${last ? `**${last.version}** — ${last.at.slice(0, 10)}` : 'первый импорт ещё не завершён'} |`,
     `| Первый импорт | ${imports[0]?.at.slice(0, 10) ?? (state.createdAt ?? '').slice(0, 10)} |`,
     `| Макет Figma | ${sources.map((s) => `[${s.nodeId}](${s.url})${Object.keys(s.variant ?? {}).length ? ` (${Object.entries(s.variant).map(([k, v]) => `${k}=${v}`).join(', ')})` : ''}`).join('<br>')} |`,
-    `| Источник данных | ${state.source === 'chrome' ? 'Chrome (Plugin API)' : 'Figma MCP'} |`,
+    `| Источник данных | ${state.source === 'chrome' ? 'Chrome MCP (Plugin API)' : 'Figma MCP'} |`,
   );
   const checked = checks(e);
   if (checked) lines.push(`| Проверка | ${cell(checked)} |`);

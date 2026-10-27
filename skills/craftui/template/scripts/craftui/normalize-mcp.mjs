@@ -87,7 +87,7 @@ export function fromMcp(raw, e, ctx) {
     version: 1,
     kind: e.kind,
     name: e.name,
-    source: 'mcp',
+    source: 'figma',
     figma: { fileKey: readJson(path.join(e.craftlog, 'figma', 'source.json'))?.fileKey, nodeId: xml.attrs.id, nodeType: isSet ? 'COMPONENT_SET' : xml.tag.toUpperCase(), nodeName: xml.attrs.name },
     props,
     targets,

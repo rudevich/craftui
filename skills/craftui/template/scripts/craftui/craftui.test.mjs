@@ -249,7 +249,7 @@ describe('digest: drafts and brief for small context windows', () => {
   it('step cards are short enough to replace the references', async () => {
     const { STEPS, instructions } = await import('./steps.mjs');
     const e = { name: 'Button', dir: 'src/components/Button', craftlog: 'src/components/Button/craftlog', specFile: 'src/components/Button/craftlog/figma/spec.json' };
-    for (const source of ['chrome', 'mcp']) {
+    for (const source of ['chrome', 'figma']) {
       for (const [id] of STEPS.component) expect(instructions(e, { source, figma: { url: 'u' } }, id).join('\n').length).toBeLessThan(1000);
     }
   });
@@ -266,5 +266,16 @@ describe('manual props survive normalize --keep', () => {
     const fresh = [{ figma: 'Optional', key: 'Optional', type: 'VARIANT', role: 'prop', react: 'optional', reactType: "'false' | 'true'", map: { False: 'false', True: 'true' } }];
     const previous = { props: [{ ...fresh[0], reactType: "'false' | 'true'", map: { False: false, True: true } }] };
     expect(mergeProps(fresh, previous)[0].reactType).toBe('boolean');
+  });
+});
+
+describe('data source', () => {
+  it('chrome (Chrome MCP) by default, the first value given wins, "mcp" is the old name of figma', async () => {
+    const { resolveSource } = await import('./lib.mjs');
+    expect(resolveSource(undefined, undefined, '')).toBe('chrome');
+    expect(resolveSource(undefined, 'figma', 'chrome')).toBe('figma');
+    expect(resolveSource('mcp')).toBe('figma');
+    expect(resolveSource('Chrome')).toBe('chrome');
+    expect(resolveSource('browser')).toBeUndefined();
   });
 });

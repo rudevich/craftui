@@ -1,5 +1,5 @@
 {
-  "source": "",
+  "source": "chrome",
   "scale": 2,
   "maxDiffRatio": 0.01,
   "tokenPrefix": "",

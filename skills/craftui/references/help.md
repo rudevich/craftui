@@ -6,14 +6,15 @@
 
 | Что сказать агенту | Что произойдёт |
 |---|---|
-| `craftui <ссылка на компонент Figma>` | новый импорт (источник спросит или возьмёт из конфига) |
-| `craftui <ссылка> через chrome` / `через mcp` | новый импорт с указанным источником |
+| `craftui <ссылка на компонент Figma>` | новый импорт через Chrome MCP (источник по умолчанию; другой — в `source` конфига) |
+| `craftui <ссылка> через figma` / `через chrome` | новый импорт через Figma MCP / Chrome MCP |
 | `craftui <ссылка на страницу UI-кита>` | список компонентов кита → выбор → пакетный импорт |
 | `craftui continue` / «продолжи импорт» | продолжение с места остановки |
 | `craftui fix Button: hover темнее, иконка 16px` | правки импортированного компонента |
 | `craftui resync Button` | пересинхронизация с изменившимся макетом |
 | `craftui status` | что импортировано и что в процессе |
 | `craftui help` | эта справка |
+| `craftui <что угодно словами>` | агент разберёт задачу (импорт, правка, проверка) и покажет план |
 
 В Claude Code: `/craftui …` (или `/craftui:craftui …`, если скилл установлен как плагин). В Codex: `$craftui …` или просто попросить словами.
 
@@ -21,8 +22,8 @@
 
 ## Источники данных
 
-- **mcp** — официальный Figma MCP (удалённый `mcp.figma.com` или локальный из Figma Desktop). Нужна авторизация сервера в агенте.
-- **chrome** — ваш Chrome, где выполнен вход в Figma: Claude in Chrome или chrome-devtools-mcp. Данные берутся через Plugin API страницы (иногда нужно один раз открыть Plugins → Development → Open console), запасной путь — сетевые запросы и Dev Mode. Если потребуется войти в Figma, агент попросит об этом явно.
+- **chrome** (по умолчанию) — Chrome MCP: ваш Chrome, где выполнен вход в Figma: Claude in Chrome или chrome-devtools-mcp. Данные берутся через Plugin API страницы (иногда нужно один раз открыть Plugins → Development → Open console), запасной путь — сетевые запросы и Dev Mode. Если потребуется войти в Figma, агент попросит об этом явно.
+- **figma** — Figma MCP: официальный сервер (удалённый `mcp.figma.com` или локальный из Figma Desktop). Нужна авторизация сервера в агенте. Старое имя `mcp` тоже принимается.
 
 ## Команды проекта
 
@@ -41,7 +42,7 @@
 | Команда | Что делает |
 |---|---|
 | `status`, `next [Name]` | где мы и что делать дальше (с точной командой) |
-| `new component <Name> <url> --source chrome\|mcp [--variant "Size=M"] [--filter f.json]` | создать сущность |
+| `new component <Name> <url> [--source chrome\|figma] [--variant "Size=M"] [--filter f.json]` | создать сущность (источник по умолчанию — chrome) |
 | `source <Name> list \| add <url> --variant … --filter …` | наборы Figma, из которых собран компонент (размеры, outline), фильтр вариантов |
 | `begin/done/fail/skip <Name> <step>`, `reopen <Name> <step>` | отметки шагов; `reopen` — заново с шага (ресинк, новые наборы) |
 | `wait/resume <Name>`, `log <Name> <текст>` | ожидание ответа пользователя, история |

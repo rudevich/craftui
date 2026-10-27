@@ -17,7 +17,7 @@
 ## A. Новый импорт
 
 1. `npm run craftui -- url "<ссылка>"`. Если проекта ещё нет — `node <skill>/template/scripts/craftui/cli.mjs url "<ссылка>"`. Если в ссылке нет node-id, попроси ссылку на слой (ПКМ → Copy link to selection).
-2. **Источник:** из сообщения пользователя → `source` в `craftui.config.json` → иначе спроси (Figma MCP или Chrome). Проверь, что инструменты доступны. Если Figma MCP требует авторизации, скажи пользователю, как её пройти (в Claude Code: `/mcp`).
+2. **Источник:** из сообщения пользователя («через chrome» / «через figma») → `source` в `craftui.config.json` → иначе **chrome** (Chrome MCP: Claude in Chrome или chrome-devtools-mcp). Проверь, что инструменты источника доступны. Нет браузерного MCP — скажи об этом и предложи figma (Figma MCP). Если Figma MCP требует авторизации, скажи пользователю, как её пройти (в Claude Code: `/mcp`).
 3. **Разведка без записи:** узнай тип узла и имя (metadata через MCP или проба в Chrome: `craftui snippet "<ссылка>" probe`, см. справочник источника).
    - COMPONENT_SET / COMPONENT → один компонент.
    - INSTANCE → предложи импортировать его главный компонент.
@@ -25,7 +25,7 @@
    - Сотни вариантов в наборе → вместе с пользователем выбери приоритетные targets и задай фильтр (`figma-chrome.md`, «Разведка»).
    - Экран (страница приложения) → скажи, что вид `page` появится в следующей версии, и предложи импортировать его компоненты.
 4. **План → подтверждение** (правило 1). Отдельно — **имя компонента**: PascalCase из имени в Figma как первый вариант (`Button / Primary` → `Button`, кириллицу транслитерируй или переведи), с проверкой, что такой папки ещё нет.
-5. `npm run craftui -- new component <Name> "<ссылка>" --source chrome|mcp [--variant "Size=M"] [--filter <файл>]`, затем остальные наборы: `craftui source <Name> add …`.
+5. `npm run craftui -- new component <Name> "<ссылка>" [--source chrome|figma] [--variant "Size=M"] [--filter <файл>]`, затем остальные наборы: `craftui source <Name> add …`.
 6. Дальше цикл `next` (см. `SKILL.md`). Шаги компонента:
    - extract → normalize;
    - confirm: свойства и targets подтверждает пользователь, и строки `?` сводки (предложенные слоты) тоже;

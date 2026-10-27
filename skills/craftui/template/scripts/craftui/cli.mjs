@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   appendHistory, config, fail, findEntity, getStep, KIND_ALIASES, KIND_DIRS, listEntities, newEntity,
-  now, openBlockers, parseFigmaUrl, readJson, replaceSection, saveState, writeJson,
+  now, openBlockers, parseFigmaUrl, readJson, replaceSection, resolveSource, saveState, writeJson,
 } from './lib.mjs';
 import { importsOf, writeReadme } from './readme.mjs';
 import { readFilter, sourceEntry } from './sources.mjs';
@@ -15,7 +15,8 @@ const HELP = `craftui — команды (npm run craftui -- <команда>)
 Состояние и продолжение
   status                       сущности проекта, их статус и текущий шаг
   next [Name]                  следующий шаг с точной инструкцией (без Name — по всему проекту с учётом зависимостей)
-  new <kind> <Name> <url> [--source chrome|mcp] [--parent Name] [--variant "Size=M"] [--filter <json|file>]
+  new <kind> <Name> <url> [--source chrome|figma] [--parent Name] [--variant "Size=M"] [--filter <json|file>]
+                               источник: chrome — Chrome MCP (по умолчанию), figma — Figma MCP
                                создать сущность (kind: component): папку, craftlog, state.json, лог
   source <Name> list | add <url> [--variant …] [--filter …] | filter <i|all> <json|file>
                                наборы Figma, из которых собирается сущность (размеры, outline…), и фильтр вариантов
@@ -90,7 +91,7 @@ const commands = {
 
   status: () => {
     const entities = listEntities();
-    if (!entities.length) return console.log('Пока нет сущностей. Новый импорт: npm run craftui -- new component <Name> <figma-url> --source chrome|mcp');
+    if (!entities.length) return console.log('Пока нет сущностей. Новый импорт: npm run craftui -- new component <Name> <figma-url> [--source chrome|figma]');
     for (const e of entities) {
       const s = e.state;
       const current = s.steps.find((x) => x.status !== 'done' && x.status !== 'skipped');
@@ -140,8 +141,8 @@ const commands = {
     const figma = parseFigmaUrl(url ?? '');
     if (!figma?.nodeId) fail('нужна ссылка Figma с node-id');
     const parent = flag('parent');
-    const source = flag('source') ?? (typeof parent === 'string' ? findEntity(parent).state.source : undefined) ?? config().source;
-    if (!['chrome', 'mcp'].includes(source)) fail('укажи --source chrome|mcp (или "source" в craftui.config.json)');
+    const source = resolveSource(flag('source'), typeof parent === 'string' ? findEntity(parent).state.source : undefined, config().source);
+    if (!source) fail('источник: --source chrome (Chrome MCP, по умолчанию) или figma (Figma MCP); так же "source" в craftui.config.json');
     const e = newEntity(kind, name);
     if (fs.existsSync(e.stateFile)) fail(`${name} уже есть — продолжай: npm run craftui -- next ${name}`);
 
