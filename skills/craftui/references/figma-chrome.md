@@ -78,7 +78,7 @@ npm run craftui -- source BasicButton add "<ссылка на outline M>" --vari
 
 1. Перезагрузи вкладку и прочитай запросы с фильтром `/api/`. Полезные JSON-ответы забери по id и сохрани в `craftlog/figma/raw/network-<что>.json`: `file_metadata`, `design_systems/library/<file>/published_and_moved_components` (список компонентов с ключами), переменные. Сам холст приходит по websocket в бинарном виде, стилей узлов в запросах нет.
 2. **Dev Mode:** `<ссылка>&m=dev`, выдели слой и прочитай текст страницы — панель Inspect показывает CSS слоя.
-3. Собери `craftlog/figma/spec.json` сам по схеме из `kind-component.md`. Эталоны PNG попроси у пользователя (Export → PNG 2x, файлы `<id>.png`) или получи гибридом: Figma MCP или `craftui rest-images`.
+3. Собери `craftlog/figma/spec.json` скриптом (`node`) по схеме из `kind-component.md`: открывать его инструментом чтения нельзя. Эталоны PNG попроси у пользователя (Export → PNG 2x, файлы `<id>.png`) или получи гибридом: Figma MCP или `craftui rest-images`.
 
 ## Запомни, что сработало
 

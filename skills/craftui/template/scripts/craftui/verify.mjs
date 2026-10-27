@@ -84,7 +84,8 @@ export function run(ref, { grep, unit, visual }) {
         const threshold = visualConfig?.default?.maxDiffRatio ?? config().maxDiffRatio;
         lines.push(`visual ${passed.length === results.length ? '✓' : '✗'} ${passed.length}/${results.length} (порог ${(threshold * 100).toFixed(1)}%)${skipped.length ? `, пропущено ${skipped.length}` : ''}`);
         for (const id of skipped) lines.push(`  ${id}: пропущен — ${visualConfig.targets[id].reason ?? 'без причины: допиши reason'}`);
-        for (const x of results.filter((x) => !x.pass).slice(0, 6)) {
+        // Worst first: fixing the biggest difference often fixes several smaller ones too.
+        for (const x of results.filter((x) => !x.pass).sort((a, b) => (b.diffRatio ?? 1) - (a.diffRatio ?? 1)).slice(0, 6)) {
           if (x.missing) {
             lines.push(`  ${x.id}: не снят — см. ${path.join(out, 'visual.log')}`);
             continue;

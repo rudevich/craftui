@@ -1,6 +1,7 @@
 // Starting files for an entity, generated from spec.json. Existing files are kept unless --force.
 import fs from 'node:fs';
 import path from 'node:path';
+import { cssDraft, markupDraft, tagOf } from './digest.mjs';
 import { appendHistory, fail, findEntity, readJson, tsLiteral } from './lib.mjs';
 
 // Adds targets that spec.json has but <Name>.demo.tsx does not (new variants, sizes) — keeps manual edits.
@@ -44,12 +45,13 @@ export function run(ref, force, addOnly) {
   const nodeMap = readJson(path.join(e.craftlog, 'figma', 'node-map.json'), { root: 'root' });
   const source = readJson(path.join(e.craftlog, 'figma', 'source.json'));
   const n = e.name;
-  const tag = /button|btn|кнопк/i.test(`${n} ${spec.figma.nodeName}`) ? 'button' : /link|ссылк/i.test(n) ? 'a' : 'div';
+  const tag = tagOf(n, spec);
   const element = { button: 'HTMLButtonElement', a: 'HTMLAnchorElement', div: 'HTMLDivElement' }[tag];
   const props = spec.props.filter((p) => p.react);
   const flags = [...new Set(spec.props.filter((p) => p.role === 'state').flatMap((p) => Object.values(p.map).map((r) => r?.flag).filter(Boolean)))];
   const hasChildren = props.some((p) => p.react === 'children');
   const slotProps = props.filter((p) => p.role === 'slot');
+  const markup = markupDraft(spec, nodeMap);
 
   const files = {
     'index.ts': `export { ${n} } from './${n}';\nexport type { ${n}Props } from './types';\n`,
@@ -92,7 +94,8 @@ export function run(ref, force, addOnly) {
         `export function ${n}({ ${destructure.join(', ')} }: ${n}Props) {`,
         `  return (`,
         `    <${tag} className={cx(styles.root, className)} ${dataAttrs.join(' ')} {...rest}>`,
-        hasChildren ? '      {children}' : '      {/* TODO: разметка по spec.json */}',
+        // Draft markup from the default target's layers (craftui brief shows the same tree); without mapped layers — children.
+        ...(markup.length ? markup : [hasChildren ? '      {children}' : '      {/* TODO: разметка — npm run craftui -- brief */}']),
         `    </${tag}>`,
         '  );',
         '}',
@@ -100,12 +103,7 @@ export function run(ref, force, addOnly) {
       ].join('\n');
     })(),
 
-    'styles.module.css': [
-      `/* ${n}: values from craftlog/figma/spec.json (targets[].tree[].css, tokens). Use var(--token) from src/tokens.css. */`,
-      '/* Figma sizes include padding and borders. */',
-      '.root,\n.root *,\n.root *::before,\n.root *::after {\n  box-sizing: border-box;\n}\n',
-      ...[...new Set(Object.values(nodeMap))].filter(Boolean).map((cls) => `.${cls} {\n}\n`),
-    ].join('\n'),
+    'styles.module.css': cssDraft(n, spec, nodeMap, tag),
 
     [`${n}.demo.tsx`]: [
       `import { defineDemo } from '@demo';`,

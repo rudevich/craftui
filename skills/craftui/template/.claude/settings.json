@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(/src/**/craftlog/figma/raw/**)",
+      "Read(/src/**/craftlog/figma/spec.json)"
+    ]
+  }
+}

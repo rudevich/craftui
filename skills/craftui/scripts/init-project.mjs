@@ -91,6 +91,14 @@ for (const rel of walk(templateDir)) {
     const mergedCfg = { ...tpl, ...cur, autopilot: { ...tpl.autopilot, ...cur.autopilot, commands: { ...tpl.autopilot.commands, ...cur.autopilot?.commands } } };
     if (!exists || JSON.stringify(mergedCfg) !== JSON.stringify(cur)) write(dest, `${JSON.stringify(mergedCfg, null, 2)}\n`);
     else kept.push(dest);
+  } else if (dest === '.claude/settings.json') {
+    // The tool owns only its deny rules (spec.json and raw Figma data are too big for a model to read); the rest is the user's.
+    const tpl = JSON.parse(content);
+    const cur = exists ? JSON.parse(fs.readFileSync(destFile, 'utf8')) : {};
+    const deny = [...new Set([...(cur.permissions?.deny ?? []), ...tpl.permissions.deny])];
+    const mergedSettings = { ...cur, permissions: { ...cur.permissions, deny } };
+    if (!exists || JSON.stringify(mergedSettings) !== JSON.stringify(cur)) write(dest, `${JSON.stringify(mergedSettings, null, 2)}\n`);
+    else kept.push(dest);
   } else if (dest === 'AGENTS.md' && exists) {
     const cur = fs.readFileSync(destFile, 'utf8');
     if (cur.includes('<!-- craftui:start -->')) {

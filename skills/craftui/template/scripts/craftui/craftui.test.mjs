@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@rstest/core';
-import { boolContent, mergeDefinitions, normNode } from './normalize.mjs';
+import { boolContent, mergeDefinitions, mergeProps, normNode } from './normalize.mjs';
 import { markSlotContent, suggestSlots } from './slots.mjs';
 import { toTsx } from './svg.mjs';
 import { sameColor } from './tokens.mjs';
@@ -193,5 +193,78 @@ describe('BOOLEAN props that show a layer', () => {
   it('a chevron that changes with the state is not offered as a slot', () => {
     const t = (id, asset) => ({ id, source: 0, tree: { key: 'root', box: { w: 280, h: 48 }, children: [{ key: 'root/chevron', asset, box: { w: 24, h: 24 } }] } });
     expect(suggestSlots({ props: [], targets: [t('closed', 'assets/down.svg'), t('open', 'assets/up.svg')] })).toEqual([]);
+  });
+});
+
+describe('digest: drafts and brief for small context windows', () => {
+  const node = (key, css, extra = {}) => ({ key, type: extra.text ? 'TEXT' : 'FRAME', box: { w: 10, h: 10 }, css, ...extra });
+  const tree = (bg, padding, size = '16px') => ({
+    ...node('root', { display: 'flex', padding, background: `var(--${bg}, #000)` }, { tokens: { 'background-color': `--${bg}` } }),
+    children: [node('root/label', { color: 'var(--c)', 'font-size': size, width: '40px' }, { text: { characters: 'Label' } })],
+  });
+  const spec = {
+    figma: { nodeName: 'Button' },
+    props: [
+      { figma: 'Size', role: 'prop', react: 'size', reactType: "'m' | 'xl'", default: 'M', map: { M: 'm', XL: 'xl' } },
+      { figma: 'View', role: 'prop', react: 'view', reactType: "'default' | 'accent'", default: 'Default', map: { Default: 'default', Accent: 'accent' } },
+      { figma: 'Hovered', role: 'state', react: null, map: { False: null, True: { pseudo: 'hover' } } },
+      { figma: 'Label', role: 'text', react: 'children', nodeKey: 'root/label', default: 'Label' },
+    ],
+    targets: [
+      { id: 'default', props: { size: 'm', view: 'default' }, tree: tree('bg', '11px 20px') },
+      { id: 'xl', props: { size: 'xl', view: 'default' }, tree: tree('bg', '0 28px', '18px') },
+      { id: 'accent', props: { size: 'm', view: 'accent' }, tree: tree('accent', '11px 20px') },
+      { id: 'hovered', props: { size: 'm', view: 'default' }, pseudo: ['hover'], tree: tree('hover', '11px 20px') },
+      { id: 'accent-hovered', props: { size: 'm', view: 'accent' }, pseudo: ['hover'], tree: tree('accent-hover', '11px 20px') },
+    ],
+  };
+  const map = { root: 'root', 'root/label': 'label' };
+
+  it('CSS draft: base from default, one rule per value, combinations only for what the parts do not explain', async () => {
+    const { cssDraft } = await import('./digest.mjs');
+    const css = cssDraft('Button', spec, map, 'button');
+    expect(css).toContain('.root {\n  border: 0;\n  cursor: pointer;\n  display: flex;\n  padding: 11px 20px;\n  background: var(--bg);\n}');
+    expect(css).toContain(".root[data-size='xl'] {\n  padding: 0 28px;\n}");
+    expect(css).toContain(".root[data-size='xl'] .label {\n  font-size: 18px;\n}");
+    expect(css).toContain(".root[data-view='accent'] {\n  background: var(--accent);\n}");
+    expect(css).toContain('.root:hover {\n  background: var(--hover);\n}');
+    expect(css).toContain(".root[data-view='accent']:hover {\n  background: var(--accent-hover);\n}");
+    expect(css).not.toContain('width: 40px'); // a text box takes the size of its text
+  });
+
+  it('markup draft: classes from the node map, the text prop in its layer', async () => {
+    const { markupDraft } = await import('./digest.mjs');
+    expect(markupDraft(spec, map, '')).toEqual(['<span className={styles.label}>{children}</span>']);
+  });
+
+  it('brief stays within its budget however big the spec is', async () => {
+    const { briefOf } = await import('./digest.mjs');
+    const many = { ...spec, targets: Array.from({ length: 300 }, (_, i) => ({ ...spec.targets[i % 5], id: `t${i}` })) };
+    const bigMap = { ...map, ...Object.fromEntries(Array.from({ length: 300 }, (_, i) => [`root/x${i}`, `x${i}`])) };
+    const text = briefOf('Button', many, bigMap);
+    expect(text.length).toBeLessThan(12500);
+    expect(text).toContain("data-size: 'm' | 'xl'");
+  });
+
+  it('step cards are short enough to replace the references', async () => {
+    const { STEPS, instructions } = await import('./steps.mjs');
+    const e = { name: 'Button', dir: 'src/components/Button', craftlog: 'src/components/Button/craftlog', specFile: 'src/components/Button/craftlog/figma/spec.json' };
+    for (const source of ['chrome', 'mcp']) {
+      for (const [id] of STEPS.component) expect(instructions(e, { source, figma: { url: 'u' } }, id).join('\n').length).toBeLessThan(1000);
+    }
+  });
+
+  it('SKILL.md stays a short core (references hold the details)', async () => {
+    const fs = await import('node:fs');
+    const file = '.craftui/skill/SKILL.md';
+    if (fs.existsSync(file)) expect(fs.statSync(file).size).toBeLessThan(8000);
+  });
+});
+
+describe('manual props survive normalize --keep', () => {
+  it('a prop whose values map to true/false stays boolean', () => {
+    const fresh = [{ figma: 'Optional', key: 'Optional', type: 'VARIANT', role: 'prop', react: 'optional', reactType: "'false' | 'true'", map: { False: 'false', True: 'true' } }];
+    const previous = { props: [{ ...fresh[0], reactType: "'false' | 'true'", map: { False: false, True: true } }] };
+    expect(mergeProps(fresh, previous)[0].reactType).toBe('boolean');
   });
 });

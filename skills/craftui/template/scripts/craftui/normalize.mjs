@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { appendHistory, camel, config, fail, findEntity, readJson, slug, writeJson } from './lib.mjs';
+import { defaultTarget, targetDiffs } from './digest.mjs';
 import { fromMcp } from './normalize-mcp.mjs';
 import { describeSlots, markSlotContent, suggestSlots } from './slots.mjs';
 
@@ -732,7 +733,7 @@ function markHidden(node, ref) {
 const sameProp = (x, p) => (p.key ? x.key === p.key || (Boolean(x.key) && x.figma === p.figma) : !x.key && x.figma === p.figma);
 
 /** Manual decisions on props win; options that appeared since (a new size, a new view) are added to the map. */
-function mergeProps(props, previous) {
+export function mergeProps(props, previous) {
   // Props the agent added by hand (an extra React prop for one Figma value, like hint) survive re-normalization.
   for (const old of previous?.props ?? []) {
     if (old.key) continue;
@@ -746,7 +747,11 @@ function mergeProps(props, previous) {
     // Edited values only for options Figma still has: View=Secondary Outline is gone once Outline became its own axis.
     const kept = Object.fromEntries(Object.entries(old.map ?? {}).filter(([k]) => !p.map || k in p.map));
     Object.assign(p, { react: old.react, reactType: old.reactType, role: old.role, map: { ...p.map, ...kept } });
-    if (p.role === 'prop' && p.reactType !== 'boolean') p.reactType = [...new Set(Object.values(p.map))].map((x) => `'${x}'`).join(' | ');
+    if (p.role === 'prop' && p.reactType !== 'boolean') {
+      // True/False of another set maps to booleans: the prop stays boolean, not the strings 'true' | 'false'.
+      const values = [...new Set(Object.values(p.map))];
+      p.reactType = values.every((x) => typeof x === 'boolean') ? 'boolean' : values.map((x) => `'${x}'`).join(' | ');
+    }
   }
   return props;
 }
@@ -811,15 +816,18 @@ function printSummary(spec) {
     const map = p.map ? Object.entries(p.map).map(([k, v]) => `${k}→${typeof v === 'object' ? JSON.stringify(v) : v}`).join(', ') : '';
     console.log(`  ${p.figma} [${p.type}] → ${p.react ?? '(состояние)'}${p.reactType ? `: ${p.reactType}` : ''}${map ? `  {${map}}` : ''}`);
   }
-  console.log(`\nTargets (${spec.targets.length}):`);
-  for (const t of spec.targets.slice(0, 40)) {
-    const extra = [t.pseudo?.length ? `pseudo ${t.pseudo.join('+')}` : '', Object.keys(t.props ?? {}).length ? JSON.stringify(t.props) : ''].filter(Boolean).join(' ');
-    console.log(`  ${t.id}  ${t.size ? `${t.size.width}×${t.size.height}` : ''}  ${extra}`);
-  }
-  if (spec.targets.length > 40) console.log(`  … ещё ${spec.targets.length - 40}`);
+  // Each target as its difference from the default one: the full props of every target do not fit a small context.
+  const base = defaultTarget(spec);
+  const diffs = new Map(targetDiffs(spec).map((d) => [d.id, d.diff]));
+  console.log(`\nTargets (${spec.targets.length}), отличия от "${base.id}" ${JSON.stringify(base.props ?? {})}:`);
+  for (const t of spec.targets.slice(0, 40)) console.log(`  ${t.id}  ${t.size ? `${t.size.width}×${t.size.height}` : ''}  ${diffs.get(t.id) || '—'}`);
+  if (spec.targets.length > 40) console.log(`  … ещё ${spec.targets.length - 40} (все: npm run craftui -- spec ${spec.name})`);
   console.log(`\nТокены: ${spec.tokens.length}${spec.tokens.length ? ` (${spec.tokens.slice(0, 6).map((t) => t.name).join(', ')}${spec.tokens.length > 6 ? ', …' : ''})` : ''}`);
   console.log(`Шрифты: ${spec.fonts.map((f) => `${f.family} ${f.styles.join('/')}`).join('; ') || '—'}`);
-  console.log(`Вложенные компоненты: ${spec.instances.map((i) => `${i.name} ×${i.nodeIds.length}${i.resolution ? ` → ${i.resolution}` : ''}`).join('; ') || '—'}`);
+  // Sizes repeat the same nested parts under other names: one line per outcome.
+  const nested = new Map();
+  for (const i of spec.instances) nested.set(i.resolution ?? 'не решено', [...new Set([...(nested.get(i.resolution ?? 'не решено') ?? []), i.name.trim()])]);
+  console.log(`Вложенные компоненты: ${[...nested].map(([r, names]) => `${r}: ${names.join(', ')}`).join('; ') || '—'}`);
   console.log(`Ассеты: ${spec.assets.map((a) => a.file).join(', ') || '—'}`);
   const unloaded = new Map();
   const walk = (n, t) => (n.unloaded && unloaded.set(n.instance?.name ?? n.name, [...new Set([...(unloaded.get(n.instance?.name ?? n.name) ?? []), t.id])]), n.children?.forEach((c) => walk(c, t)));

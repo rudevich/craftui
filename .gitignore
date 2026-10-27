@@ -3,5 +3,5 @@ playground/
 playground-*/
 .DS_Store
 ~/
-.claude/
+/.claude/
 todo.md

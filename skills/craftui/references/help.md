@@ -48,11 +48,13 @@
 | `url`, `receiver`, `snippet`, `put`, `rest-images` | работа с Figma |
 | `normalize [--keep] [--summary]`, `deps [--inline <имя> \| --inline-all \| --same <имя> <Entity>]`, `tokens` | spec.json, вложенные компоненты (встроить, встроить всё, двойник сущности), токены |
 | `slot <Name> <@ключ… \| Ось=Значение> <prop>` | слой (иконка во всех вариантах) или значение оси — содержимое пропа: `slot IconButton @root/content children` |
-| `scaffold [--force] [--add-targets]`, `svg <Name> <asset> <Icon>` | заготовки, новые targets в демо, TSX-иконки из ассетов (без пустых clipPath во весь размер) |
+| `prop <Name> "<свойство Figma>" <имя React \| -> [тип] [--role …]` | правка или добавление свойства на шаге confirm без открытия spec.json |
+| `scaffold [--force] [--add-targets]`, `svg <Name> <asset> <Icon>` | заготовки и черновики кода (разметка по слоям, стили по вариантам), новые targets в демо, TSX-иконки из ассетов (без пустых clipPath во весь размер) |
+| `brief <Name>`, `spec <Name> [<target>] [<слой>]` | выжимка spec.json для кода (~4k токенов) и точечный просмотр слоёв; сам spec.json не открывать |
 | `verify <Name> [--grep id]`, `shortcuts` | проверка (единицы, typecheck, rstest, скриншоты, style-check), сбор компромиссов |
 | `units [Name]` | правило единиц: только `px` и `%`; `vw`/`vh`/`dvh`… — только оверлеи с `/* units: … */` |
 | `readme [Name]` | README.md в папке компонента (обновляется и сам: при report и `npm run gen`) |
-| `hooks install`, `autopilot` | автопродолжение |
+| `hooks install`, `autopilot` | автопродолжение: не останавливаться на середине, после сжатия контекста вернуть карточку шага, перезапуск после сбоев API |
 
 Полный список: `npm run craftui -- help`.
 
@@ -94,7 +96,41 @@ import { Button } from '<pkg>/Button'; // CSS компонента подтян�
 | Тесты rstest не стартуют | Node.js `^20.19 || >=22.12` |
 | Скриншот-тест: «target is missing» | id в `<Name>.demo.tsx` должен совпадать с именем эталона |
 | Агент упал на ошибке API | `craftui continue` или `npm run craftui -- autopilot` |
+| Модель долго читает данные Figma и не начинает писать код, контекст постоянно сжимается | маленькое окно модели — см. раздел ниже |
 | Нужно принять отличие от макета | попросите агента: он запишет отклонение и ослабит проверку только для этого состояния |
+
+## Маленькое окно модели (LiteLLM, vLLM, локальные модели)
+
+Скилл рассчитан и на модели с окном ~64k. Только системный промпт и инструменты Claude Code занимают из них 15–20k. Поэтому:
+- `spec.json` и `figma/raw/*` модель не открывает: в проекте их чтение запрещено (`.claude/settings.json`). Данные для кода дают `craftui brief` и `craftui spec`, свойства правятся через `craftui prop`;
+- карточка `craftui next` самодостаточна, справочники нужны только в трудных местах;
+- scaffold пишет черновик разметки и стилей из макета: модели остаётся довести его по замечаниям `craftui verify`;
+- `npm run craftui -- hooks install` добавляет хук, который после сжатия контекста возвращает модели текущий шаг.
+
+Claude Code должен знать настоящее окно модели. Иначе он сжимает контекст слишком поздно, и шлюз отвечает `400 ContextWindowExceededError`. Пример для qwen с окном 64000 токенов, в `env` файла `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_MODEL": "qwen3.8",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "qwen3.8",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "qwen3.8",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "qwen3.8",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "qwen3.8",
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "64000",
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8192",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "75",
+    "CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS": "10000",
+    "BASH_MAX_OUTPUT_LENGTH": "20000",
+    "MAX_MCP_OUTPUT_TOKENS": "8000"
+  }
+}
+```
+
+- Имя модели — как в шлюзе. Оно не должно начинаться с `claude-`, иначе `CLAUDE_CODE_MAX_CONTEXT_TOKENS` не действует.
+- `CLAUDE_CODE_MAX_OUTPUT_TOKENS`: vLLM считает промпт и ответ вместе, а без этой настройки Claude Code просит 32000 токенов ответа, то есть половину окна.
+- `CLAUDE_CODE_AUTO_COMPACT_WINDOW` не подходит: у него минимум 100000.
+- Если ошибка всё же случилась — `/compact` в той же сессии, перезапуск не нужен.
 
 ## Скоро
 

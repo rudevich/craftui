@@ -1,4 +1,5 @@
-// Auto-continue: a Stop hook (Claude Code, Codex) and an autopilot loop that restarts the agent after API failures.
+// Auto-continue: a Stop hook (Claude Code, Codex), a SessionStart hook after compaction (Claude Code)
+// and an autopilot loop that restarts the agent after API failures.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -28,8 +29,16 @@ export function install(args) {
     settings.hooks.Stop ??= [];
     const present = settings.hooks.Stop.some((g) => g.hooks?.some((h) => h.command === command));
     if (!present) settings.hooks.Stop.push({ matcher: '', hooks: [{ type: 'command', command, timeout: 10 }] });
-    writeJson(file, settings);
     console.log(`${present ? '= уже есть' : '✓ добавлен'} Stop-хук в ${file}`);
+    // After compaction a small-context model forgets the step it was on: give it the card again.
+    if (file.startsWith('.claude')) {
+      const session = 'node scripts/craftui/cli.mjs hook-session';
+      settings.hooks.SessionStart ??= [];
+      const has = settings.hooks.SessionStart.some((g) => g.hooks?.some((h) => h.command === session));
+      if (!has) settings.hooks.SessionStart.push({ matcher: 'compact', hooks: [{ type: 'command', command: session, timeout: 10 }] });
+      console.log(`${has ? '= уже есть' : '✓ добавлен'} SessionStart-хук (после сжатия контекста) в ${file}`);
+    }
+    writeJson(file, settings);
   }
   console.log('Codex может попросить доверить хук при первом запуске (trusted_hash в ~/.codex/config.toml).');
 }

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   appendHistory, config, fail, findEntity, getStep, KIND_ALIASES, KIND_DIRS, listEntities, newEntity,
-  now, openBlockers, parseFigmaUrl, replaceSection, saveState, writeJson,
+  now, openBlockers, parseFigmaUrl, readJson, replaceSection, saveState, writeJson,
 } from './lib.mjs';
 import { importsOf, writeReadme } from './readme.mjs';
 import { readFilter, sourceEntry } from './sources.mjs';
@@ -41,6 +41,11 @@ Figma
   tokens <Name>                добавить токены из spec.json в src/tokens.css
   scaffold <Name> [--force]    заготовки: index.ts, <Name>.tsx, styles.module.css, types.ts, demo, тесты, node-map
   scaffold <Name> --add-targets   дописать в <Name>.demo.tsx targets, которых там ещё нет (новые варианты, размеры)
+  prop <Name> <свойство Figma> <имя React | -> [тип TS] [--role text|bool|slot|prop --default <v>]
+                               правка свойства на шаге confirm (targets переименуются тоже); с --role — новое свойство
+  brief <Name>                 выжимка spec.json для шага code (~4k токенов): data-атрибуты, пропсы, разметка, стили
+  spec <Name> [<target>] [<слой>] [--depth N]   точечный просмотр spec.json: без target — список targets,
+                               иначе слои с классами и CSS (spec.json целиком не открывать — он огромный)
   svg <Name> <asset.svg> <IconName>   TSX-иконка из ассета Figma (одноцветная → currentColor), вывод в stdout
   verify <Name> [--grep <id>] [--no-unit] [--no-visual]   единицы + typecheck + rstest + скриншоты + style-check, краткая сводка
   units [Name]                 правило единиц: только px и %; vw/vh/dvh… — только оверлеи с комментарием /* units: … */
@@ -48,7 +53,8 @@ Figma
   shortcuts [Name]             собрать комментарии \`shortcut:\` в раздел «Компромиссы» лога
 
 Автопродолжение
-  hooks install [--claude] [--codex]   проектный Stop-хук: не даёт агенту остановиться, пока есть шаги
+  hooks install [--claude] [--codex]   проектные хуки: Stop не даёт остановиться, пока есть шаги;
+                               SessionStart (Claude Code) после сжатия контекста возвращает карточку текущего шага
   hook-stop                    обработчик хука (вызывается агентом)
   autopilot [--agent claude|codex] [--max N]   перезапускать агента после сбоев API, пока работа не закончена
 `;
@@ -242,6 +248,8 @@ const commands = {
   deps: async () => (await import('./deps.mjs')).run(positional()[0], flag('inline'), { all: Boolean(flag('inline-all')), same: flag('same') ? [flag('same'), positional()[1]] : null }),
   tokens: async () => (await import('./tokens.mjs')).run(positional()[0]),
   scaffold: async () => (await import('./scaffold.mjs')).run(positional()[0], Boolean(flag('force')), Boolean(flag('add-targets'))),
+  brief: async () => console.log((await import('./digest.mjs')).brief(positional()[0])),
+  spec: async () => console.log((await import('./digest.mjs')).query(positional()[0], positional()[1], positional()[2], Number(flag('depth')) || 3)),
   svg: async () => (await import('./svg.mjs')).run(positional()),
   readme: async () => (await import('./readme.mjs')).run(positional()[0]),
   units: async () => (await import('./units.mjs')).run(positional()[0]),
@@ -249,6 +257,34 @@ const commands = {
   verify: async () => (await import('./verify.mjs')).run(positional()[0], { grep: flag('grep'), unit: !flag('no-unit'), visual: !flag('no-visual') }),
   hooks: async () => (args[0] === 'install' ? (await import('./hooks.mjs')).install(args.slice(1)) : fail('usage: hooks install [--claude] [--codex]')),
   'hook-stop': async () => (await import('./hooks.mjs')).hookStop(),
+  // SessionStart after compaction: the card of the current step goes back into the fresh context.
+  'hook-session': () => {
+    if (!fs.existsSync('craftui.config.json') || !listEntities().some((e) => e.state.status !== 'done')) return;
+    console.log('craftui: контекст сжат, продолжай с текущего шага. spec.json и figma/raw не открывай — данные: npm run craftui -- brief <Name>.');
+    commands.next();
+  },
+  // Confirm step: a Figma property becomes a React prop (or "-": not a prop). Targets follow the new name.
+  prop: () => {
+    const [ref, figmaName, react, reactType] = positional();
+    const e = findEntity(ref);
+    const spec = readJson(e.specFile) ?? fail(`нет spec.json — npm run craftui -- normalize ${e.name}`);
+    if (!react) fail('usage: prop <Name> <свойство Figma> <имя React | -> [тип TS] [--role text|bool|slot|prop --default <значение>]');
+    let p = spec.props.find((x) => x.figma === figmaName);
+    // An MCP export does not show TEXT, BOOLEAN and INSTANCE_SWAP properties: they are added by hand with a role.
+    if (!p && typeof flag('role') === 'string') spec.props.push((p = { figma: figmaName, role: flag('role'), react: null, ...(flag('default') !== undefined ? { default: flag('default') } : {}) }));
+    if (!p) fail(`нет свойства "${figmaName}" (новое — с --role). Есть: ${spec.props.map((x) => x.figma).join(', ')}`);
+    const was = p.react;
+    p.react = react === '-' ? null : react;
+    if (reactType) p.reactType = reactType;
+    for (const t of spec.targets) {
+      if (!was || !(was in (t.props ?? {}))) continue;
+      if (p.react) t.props[p.react] = t.props[was];
+      delete t.props[was];
+    }
+    writeJson(e.specFile, spec);
+    appendHistory(e, `confirm: ${figmaName} → ${p.react ?? '(не проп)'}${reactType ? `: ${reactType}` : ''}`);
+    console.log(`✓ ${figmaName} → ${p.react ?? '(не проп)'}${reactType ? `: ${reactType}` : ''}. Затем: npm run craftui -- normalize ${e.name} --keep`);
+  },
   autopilot: async () => (await import('./hooks.mjs')).autopilot({ agent: flag('agent'), max: Number(flag('max')) || 10 }),
 };
 

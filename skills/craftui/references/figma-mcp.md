@@ -22,7 +22,7 @@
 
 ## normalize
 
-`npm run craftui -- normalize <Name>` строит targets из вариантов в metadata, а `css` и `expect` узлов — из Tailwind-классов design context (по `data-node-id`, best effort). Свойства TEXT, BOOLEAN и INSTANCE_SWAP в metadata не видны: на шаге confirm добавь их в `spec.json` → `props` вручную по коду design context и согласуй с пользователем.
+`npm run craftui -- normalize <Name>` строит targets из вариантов в metadata, а `css` и `expect` узлов — из Tailwind-классов design context (по `data-node-id`, best effort). Свойства TEXT, BOOLEAN и INSTANCE_SWAP в metadata не видны: на шаге confirm добавь их по коду design context командой `npm run craftui -- prop <Name> "<свойство Figma>" <имя React> [тип TS] --role text|bool|slot [--default <значение>]` и согласуй с пользователем. `spec.json` руками не открывай: он большой.
 
 ## Эталоны (шаг screenshots), по порядку
 

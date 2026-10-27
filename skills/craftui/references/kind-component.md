@@ -14,9 +14,11 @@ src/components/<Name>/
   craftlog/              всё про импорт: лог, state.json, figma/, visual/, tests/
 ```
 
-`npm run craftui -- scaffold <Name>` создаёт заготовки всех файлов из `spec.json`. Существующие файлы он не трогает (перезапись — `--force`).
+`npm run craftui -- scaffold <Name>` создаёт заготовки всех файлов из `spec.json`, в том числе черновики: разметку `<Name>.tsx` по слоям target `default` и `styles.module.css` (база по default, правила на каждое значение свойства и на сочетания). На шаге code их доводят, а не пишут заново. Существующие файлы scaffold не трогает (перезапись — `--force`).
 
 ## spec.json — источник данных
+
+Целиком его не открывай: сотни килобайт не помещаются в контекст, а в проекте чтение запрещено (`.claude/settings.json`). Смотри данные через `craftui brief <Name>` и `craftui spec <Name> <target> <слой>`, свойства правь через `craftui prop`. Схема ниже нужна, чтобы понимать вывод этих команд.
 
 - `props[]`: свойство Figma → React (`role`: prop | state | text | bool | slot, `react`, `reactType`, `map`).
 - `targets[]`: по одному на вариант. `id` совпадает с именем эталона, `props` и `pseudo` — для демо, `size` — размер в Figma, `frame` — фиксированная ширина или высота обёртки, `tree` — дерево слоёв.
