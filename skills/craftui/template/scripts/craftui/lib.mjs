@@ -63,8 +63,19 @@ export const printLimit = () => (config().context === 'large' ? 40000 : 12000);
 
 export const BREAKPOINTS = ['mobile', 'tablet', 'desktop', 'largeDesktop'];
 
-/** Enabled ranges in order, both bounds inclusive: [{ name, min, max }], max is Infinity for the last one. */
-export const breakpointRanges = (bp) => BREAKPOINTS.filter((n) => bp?.[n]).map((n) => ({ name: n, min: bp[n].min ?? 0, max: bp[n].max ?? Infinity }));
+/**
+ * Enabled ranges in order, both bounds inclusive: [{ name, min, max }], max is Infinity for the last one.
+ * A min equal to the max before it reads as "wider than" (tablet 600 after mobile ≤ 600 starts at 601), as people write it by hand.
+ */
+export const breakpointRanges = (bp) =>
+  BREAKPOINTS.filter((n) => bp?.[n]).reduce((out, n) => {
+    const before = out.at(-1);
+    const min = bp[n].min ?? 0;
+    return [...out, { name: n, min: before && min === before.max ? min + 1 : min, max: bp[n].max ?? Infinity }];
+  }, []);
+
+/** Ranges as the snippets take them (JSON has no Infinity). */
+export const breakpointsForSnippet = (bp) => bp && Object.fromEntries(breakpointRanges(bp).map((r) => [r.name, { min: r.min, ...(r.max === Infinity ? {} : { max: r.max }) }]));
 
 export function breakpointProblems(bp) {
   const ranges = breakpointRanges(bp);

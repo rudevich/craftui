@@ -41,12 +41,20 @@ function contentBox(data: Buffer, width: number, height: number, scale: number):
   return { x: r(minX), y: r(minY), w: r(maxX - minX + 1), h: r(maxY - minY + 1) };
 }
 
+// The top rows of a reference that draw device chrome the page leaves out (craftui skip → target.mockTop).
+function cropTop(png: PNG, rows: number): PNG {
+  if (rows <= 0 || rows >= png.height) return png;
+  const out = new PNG({ width: png.width, height: png.height - rows });
+  png.data.copy(out.data, 0, rows * png.width * 4);
+  return out;
+}
+
 export function compare(
   figmaBuf: Buffer,
   reactBuf: Buffer,
-  opts: { scale: number; threshold?: number; masks?: Box[] },
+  opts: { scale: number; threshold?: number; masks?: Box[]; cropTop?: number },
 ): CompareResult {
-  const figma = PNG.sync.read(figmaBuf);
+  const figma = cropTop(PNG.sync.read(figmaBuf), Math.round((opts.cropTop ?? 0) * opts.scale));
   const react = PNG.sync.read(reactBuf);
   const { scale } = opts;
   const width = Math.max(figma.width, react.width);

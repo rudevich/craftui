@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { appendHistory, fail, readJson, tsLiteral } from './lib.mjs';
 import { importLines, markup, markupContext, pageCss, unionTree } from './digest-page.mjs';
-import { partFolder } from './normalize-page.mjs';
+import { partFolder, sharedPartsDir } from './normalize-page.mjs';
 
 const findKey = (node, key) => (node.key === key ? node : (node.children ?? []).map((c) => findKey(c, key)).find(Boolean));
 
@@ -66,17 +66,30 @@ export function run(e, force, addOnly) {
     'craftlog/visual/visual.config.json': `${JSON.stringify({ default: {}, targets: {} }, null, 2)}\n`,
   };
 
-  // Parts: the layer's subtree in parts/<Page><Part>/, its classes in its own CSS module.
-  const parts = (spec.parts ?? []).map((p) => ({ ...p, folder: partFolder(n, p.name), node: findKey(tree, p.key) })).filter((p) => p.node);
+  // Parts: the layer's subtree in parts/<Page><Part>/, its classes in its own CSS module. A shared part goes to
+  // src/pages/parts/<Name>/ once, with part.json: the page that made it owns it, later pages import it as it is.
+  const parts = (spec.parts ?? []).map((p) => ({ ...p, folder: partFolder(n, p), node: findKey(tree, p.key) })).filter((p) => p.node);
+  const reused = [];
+  const copies = [...page.imports.images.values()].map((file) => [file, 'assets']);
   for (const p of parts) {
+    const made = p.shared && readJson(path.join(sharedPartsDir(), p.name, 'part.json'));
+    if (made && made.page !== n) {
+      reused.push(p.name);
+      continue;
+    }
+    const dir = p.shared ? path.relative(e.dir, path.join(sharedPartsDir(), p.folder)) : `parts/${p.folder}`;
     const ctx = markupContext({ ...spec, parts: [] }, nodeMap, '      ');
     const lines = markup(p.node, ctx);
-    files[`parts/${p.folder}/index.ts`] = `export { ${p.folder} } from './${p.folder}';\n`;
-    files[`parts/${p.folder}/${p.folder}.tsx`] = [
-      ...importLines(ctx.imports, 4, '../../assets/'),
+    copies.push(...[...ctx.imports.images.values()].map((file) => [file, p.shared ? `${dir}/assets` : 'assets']));
+    if (p.shared) files[`${dir}/part.json`] = `${JSON.stringify({ name: p.name, page: n, key: p.key, layer: p.node.name, instance: p.node.instance?.key ?? null }, null, 2)}\n`;
+    files[`${dir}/index.ts`] = `export { ${p.folder} } from './${p.folder}';\n`;
+    files[`${dir}/${p.folder}.tsx`] = [
+      ...(p.shared ? importLines(ctx.imports, 3, './assets/') : importLines(ctx.imports, 4, '../../assets/')),
       `import styles from './styles.module.css';`,
       '',
-      `// Part of the page ${n}: layer ${p.key}. Classes: "${p.folder}/<class>" in craftlog/figma/node-map.json.`,
+      p.shared
+        ? `// Shared part of pages, made from ${n} (layer ${p.key}); other pages import it as it is. Classes: "${p.folder}/<class>" in ${n}/craftlog/figma/node-map.json.`
+        : `// Part of the page ${n}: layer ${p.key}. Classes: "${p.folder}/<class>" in craftlog/figma/node-map.json.`,
       `export function ${p.folder}() {`,
       '  return (',
       '    <>',
@@ -86,7 +99,7 @@ export function run(e, force, addOnly) {
       '}',
       '',
     ].join('\n');
-    files[`parts/${p.folder}/styles.module.css`] = css.get(p.folder) ?? `/* ${p.folder}: часть страницы ${n}. */\n`;
+    files[`${dir}/styles.module.css`] = css.get(p.folder) ?? `/* ${p.folder}: часть страницы ${n}. */\n`;
   }
 
   files[`craftlog/tests/${n}.test.tsx`] = [
@@ -129,19 +142,22 @@ export function run(e, force, addOnly) {
     fs.writeFileSync(file, content);
     created.push(rel);
   }
-  // Pictures the markup imports: copies next to the page, so the build does not reach into craftlog/.
+  // Pictures the markup imports: copies next to the page (a shared part: next to it), so the build does not reach into craftlog/.
   const missing = [];
-  for (const file of new Set([...page.imports.images.values(), ...spec.assets.filter((a) => a.format === 'png').map((a) => a.file)])) {
+  copies.push(...spec.assets.filter((a) => a.format === 'png').map((a) => [a.file, 'assets']));
+  for (const key of new Set(copies.map(([file, to]) => `${to}\n${file}`))) {
+    const [where, file] = key.split('\n');
     const from = path.join(e.craftlog, 'figma', file);
-    const to = path.join(e.dir, 'assets', path.basename(file));
+    const to = path.join(e.dir, where, path.basename(file));
     if (!fs.existsSync(from)) missing.push(file);
     else if (force || !fs.existsSync(to)) {
       fs.mkdirSync(path.dirname(to), { recursive: true });
       fs.copyFileSync(from, to);
     }
   }
-  appendHistory(e, `scaffold: создано ${created.length}, оставлено ${kept.length}, частей ${parts.length}`);
+  appendHistory(e, `scaffold: создано ${created.length}, оставлено ${kept.length}, частей ${parts.length}${reused.length ? `, общих готовых ${reused.join(', ')}` : ''}`);
   console.log(`scaffold ${e.dir}: создано ${created.join(', ') || '—'}${kept.length ? `; уже были (не тронуты): ${kept.join(', ')}` : ''}`);
+  if (reused.length) console.log(`общие части взяты готовыми из ${sharedPartsDir()}: ${reused.join(', ')}`);
   if (missing.length) console.log(`⚠ нет файлов ${missing.join(', ')} — сначала шаг screenshots (snippet ${n} export)`);
 }
 

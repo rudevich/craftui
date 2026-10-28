@@ -33,17 +33,19 @@ export function unionTree(targets) {
 // What a page may set on a component it uses: its place in the layout. The component styles itself.
 const PLACEMENT = new Set(['align-self', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'order', 'width', 'max-width', 'min-width', 'height', 'max-height', 'min-height', 'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'position', 'top', 'right', 'bottom', 'left', 'z-index', 'grid-column', 'grid-row']);
 
-/** Classes of layers that are components (only placement) and pictures (an <img>), from every breakpoint. */
-function layerKinds(targets, nodeMap) {
+/** Classes of layers that are imported components (only placement) and pictures (an <img>), from every breakpoint. */
+function layerKinds(spec, nodeMap) {
   const components = new Set();
   const pictures = new Set();
+  // An instance laid out inline (a part made from a kit header) keeps its own styles.
+  const imported = new Set((spec.instances ?? []).filter((i) => i.resolution?.startsWith('entity:')).map((i) => i.key));
   const walk = (n) => {
     const cls = nodeMap[n.key];
-    if (cls && n.instance) components.add(cls);
+    if (cls && imported.has(n.instance?.key)) components.add(cls);
     if (cls && n.picture) pictures.add(cls);
     n.children?.forEach(walk);
   };
-  targets.forEach((t) => walk(t.tree));
+  spec.targets.forEach((t) => walk(t.tree));
   return { components, pictures };
 }
 
@@ -80,7 +82,7 @@ export function pageCss(name, spec, nodeMap, bp = config().pages.breakpoints) {
     return files.get(f);
   };
 
-  const kinds = layerKinds(targets, nodeMap);
+  const kinds = layerKinds({ ...spec, targets }, nodeMap);
   let current = {};
   targets.forEach((t, i) => {
     const actual = adapt(classDecls(t, nodeMap), t.size.width, kinds);
@@ -128,18 +130,20 @@ export function componentJsx(inst, compName, compSpec, className) {
   const attrs = className ? [`className={styles.${className}}`] : [];
   let children = null;
   for (const p of compSpec?.props ?? []) {
-    if (!p.react) continue;
     const figmaValue = inst.variant?.[p.figma] ?? inst.props?.[p.figma];
+    // A state the design shows as a flag (Disabled=True → disabled); hover and pressed are the browser's business.
+    if (p.role === 'state' && figmaValue !== undefined && p.map?.[figmaValue]?.flag) attrs.push(p.map[figmaValue].flag);
+    if (!p.react) continue;
     if (p.role === 'prop' && figmaValue !== undefined) {
       const v = p.map?.[figmaValue] ?? figmaValue;
       if (v === true) attrs.push(p.react);
       else if (v !== false && v !== null && v !== undefined && v !== p.map?.[p.default]) attrs.push(`${p.react}=${JSON.stringify(String(v))}`);
     }
     if (p.role === 'text') {
-      // A TEXT property, else (a label without one) the text the instance has in that layer.
+      // A TEXT property, else (a label without one) the text the instance has in that layer. A boolean is a caption switched off.
       const own = inst.props?.[p.figma] ?? (p.synthetic ? inst.texts?.[p.figma] : undefined);
       const text = typeof own === 'string' ? own : p.default;
-      if (text === undefined) continue;
+      if (typeof text !== 'string') continue;
       if (p.react === 'children') children = text;
       else attrs.push(`${p.react}=${JSON.stringify(String(text))}`);
     }
@@ -156,8 +160,8 @@ export function markup(node, ctx, depth = 0) {
   const pad = `${ctx.indent}${'  '.repeat(depth)}`;
   if (node.hidden) return [];
   if (depth > 0 && ctx.parts.has(node.key)) {
-    const folder = ctx.parts.get(node.key);
-    ctx.imports.parts.add(folder);
+    const { folder, shared } = ctx.parts.get(node.key);
+    ctx.imports[shared ? 'shared' : 'parts'].add(folder);
     return [`${pad}<${folder} />`];
   }
   const cls = ctx.nodeMap[node.key] ? localOf(ctx.nodeMap[node.key]) : null;
@@ -206,8 +210,8 @@ export function markupContext(spec, nodeMap, indent) {
     spec,
     nodeMap,
     indent,
-    parts: new Map((spec.parts ?? []).map((p) => [p.key, partFolder(spec.name, p.name)])),
-    imports: { components: new Set(), parts: new Set(), images: new Map() },
+    parts: new Map((spec.parts ?? []).map((p) => [p.key, { folder: partFolder(spec.name, p), shared: Boolean(p.shared) }])),
+    imports: { components: new Set(), parts: new Set(), shared: new Set(), images: new Map() },
     notes: [],
     compSpec: (name) => {
       if (!specs.has(name)) specs.set(name, readJson(path.join(kindDirs().component, name, 'craftlog', 'figma', 'spec.json')));
@@ -216,13 +220,17 @@ export function markupContext(spec, nodeMap, indent) {
   };
 }
 
-/** Import lines for a file `up` folders below src/ (a page: 2, a part: 4); images live in the page's assets/. */
-export function importLines(imports, up, toPageAssets) {
+/**
+ * Import lines for a file `up` folders below src/ (a page: 2, its part: 4, a shared part: 3); images live in `toAssets`.
+ * Shared parts are in src/pages/parts/, one folder up from a page.
+ */
+export function importLines(imports, up, toAssets) {
   const root = '../'.repeat(up);
   return [
     ...[...imports.components].sort().map((c) => `import { ${c} } from '${root}${compDir()}/${c}';`),
     ...[...imports.parts].sort().map((p) => `import { ${p} } from './parts/${p}';`),
-    ...[...imports.images].map(([v, file]) => `import ${v} from '${toPageAssets}${path.basename(file)}';`),
+    ...[...(imports.shared ?? [])].sort().map((p) => `import { ${p} } from '${'../'.repeat(up - 1)}parts/${p}';`),
+    ...[...imports.images].map(([v, file]) => `import ${v} from '${toAssets}${path.basename(file)}';`),
   ];
 }
 
@@ -243,7 +251,7 @@ export function pageBrief(e, spec, nodeMap) {
     }),
     'Вёрстка mobile-first: .root — контейнер (container-type: inline-size), правила шире — @container (min-width: <граница>px). Границы не меняй.',
     '',
-    `Части (parts/<Имя>/): ${(spec.parts ?? []).map((p) => `${partFolder(e.name, p.name)} ← ${p.key}`).join(', ') || 'нет'}`,
+    `Части (parts/<Имя>/; общие — src/pages/parts/<Имя>/): ${(spec.parts ?? []).map((p) => `${partFolder(e.name, p)}${p.shared ? ' (общая)' : ''} ← ${p.key}`).join(', ') || 'нет'}`,
     '',
     'Разметка всех брейкпоинтов вместе (черновик уже в файлах; слой, которого нет на брейкпоинте, скрыт в CSS):',
     // A legal text of thousands of characters is in the draft already; the brief shows where it goes.

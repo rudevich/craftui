@@ -48,7 +48,8 @@ Figma
   prop <Name> <свойство Figma> <имя React | -> [тип TS] [--role text|bool|slot|prop --default <v>]
                                правка свойства на шаге confirm (targets переименуются тоже); с --role — новое свойство
   prop <Name> <свойство Figma> --state <disabled|loading|hover|active>   значение свойства — состояние, а не проп
-  part <Page> <слой> <Имя> [--remove]   слой страницы — её внутренняя часть (parts/<Page><Имя>/), шаг confirm
+  skip <Page> <слой> [--remove]   слой макета устройства (статус-бар, панель браузера) не верстать, шаг confirm
+  part <Page> <слой> <Имя> [--shared] [--remove]   слой страницы — её часть (parts/<Page><Имя>/; --shared — общая для страниц, src/pages/parts/<Имя>/), шаг confirm
   brief <Name>                 выжимка spec.json для шага code (~4k токенов): data-атрибуты, пропсы, разметка, стили
   spec <Name> [<target>] [<слой>] [--depth N]   точечный просмотр spec.json: без target — список targets,
                                иначе слои с классами и CSS (spec.json целиком не открывать — он огромный)
@@ -283,7 +284,8 @@ const commands = {
   tokens: async () => (await import('./tokens.mjs')).run(positional()[0]),
   scaffold: async () => (await import('./scaffold.mjs')).run(positional()[0], Boolean(flag('force')), Boolean(flag('add-targets'))),
   brief: async () => console.log(await (await import('./digest.mjs')).brief(positional()[0])),
-  part: async () => (await import('./normalize-page.mjs')).part(positional(), Boolean(flag('remove'))),
+  skip: async () => (await import('./normalize-page.mjs')).skipLayer(positional(), Boolean(flag('remove'))),
+  part: async () => (await import('./normalize-page.mjs')).part(positional(), { remove: Boolean(flag('remove')), shared: Boolean(flag('shared')) }),
   spec: async () => console.log((await import('./digest.mjs')).query(positional()[0], positional()[1], positional()[2], Number(flag('depth')) || 3)),
   svg: async () => (await import('./svg.mjs')).run(positional()),
   readme: async () => (await import('./readme.mjs')).run(positional()[0]),

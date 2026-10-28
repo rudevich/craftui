@@ -38,6 +38,7 @@
         if ('children' in node && ['PAGE', 'SECTION', 'FRAME', 'GROUP'].includes(node.type)) {
           const frames = node.children.filter((c) => c.type === 'FRAME' || c.type === 'COMPONENT' || c.type === 'INSTANCE').slice(0, 50);
           if (frames.length) out.node.frames = frames.map((c) => ({ id: c.id, name: c.name, width: Math.round(c.width), height: Math.round(c.height), range: range(c.width) }));
+          if ((node.type === 'GROUP' || node.type === 'SECTION') && frames.length > 1) out.node.hint = 'экран из фреймов-брейкпоинтов: npm run craftui -- new page <Имя> "<эта ссылка>" — каждый фрейм станет своим брейкпоинтом';
         }
         if (node.type === 'FRAME') out.node.range = range(node.width);
         if (node.type === 'INSTANCE') out.node.main = (await node.getMainComponentAsync())?.name;

@@ -52,14 +52,16 @@ export function describeVisual(name: string, kind = 'components') {
           ? await page.screenshot({ clip: { x: box.x + area.x, y: box.y + area.y, width: area.w, height: area.h }, fullPage: true, omitBackground: true, animations: 'disabled', caret: 'hide' })
           : await target.screenshot({ omitBackground: true, animations: 'disabled', caret: 'hide' });
         fs.writeFileSync(path.join(out, `${id}.actual.png`), actual);
+        const specTarget = spec?.targets?.find((x: { id: string }) => x.id === id);
         const result = compare(fs.readFileSync(path.join(shots, `${id}.png`)), actual, {
           scale,
           threshold: t.threshold,
           masks: t.mask,
+          cropTop: specTarget?.mockTop,
         });
         fs.writeFileSync(path.join(out, `${id}.diff.png`), result.diffPng);
 
-        const tree = spec?.targets?.find((x: { id: string }) => x.id === id)?.tree;
+        const tree = specTarget?.tree;
         const styleIssues = tree ? await styleCheck(target, name, tree, nodeMap) : [];
         const maxDiffRatio = t.maxDiffRatio ?? defaultMaxDiff;
         const pass = result.diffRatio <= maxDiffRatio && !result.sizeMismatch;

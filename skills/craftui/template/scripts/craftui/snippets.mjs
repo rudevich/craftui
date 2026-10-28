@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { config, fail, findEntity, parseFigmaUrl, readJson, safeCraftlogPath } from './lib.mjs';
+import { breakpointsForSnippet, config, fail, findEntity, parseFigmaUrl, readJson, safeCraftlogPath } from './lib.mjs';
 import { sourcesOf } from './sources.mjs';
 
 const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'snippets');
@@ -22,7 +22,7 @@ function params(e, step) {
     craftlog: e.craftlog.split(path.sep).join('/'),
     receiver: `http://127.0.0.1:${cfg.receiverPort ?? 4601}`,
     scale: e.kind === 'page' ? cfg.pages.scale : cfg.scale,
-    breakpoints: cfg.pages.breakpoints,
+    breakpoints: breakpointsForSnippet(cfg.pages.breakpoints),
   };
   if (e.kind === 'page') p.maxNodes = 15000; // a screen holds far more layers than a component
   if (step === 'extract') p.sources = sourcesOf(e).sources.map(({ nodeId, variant, filter }) => ({ nodeId, variant, filter }));
@@ -48,7 +48,7 @@ export function run([ref, step]) {
   if (figma) {
     if (step !== 'probe') fail('по ссылке доступен только probe; для extract/export сначала npm run craftui -- new …');
     const cfg = config();
-    const p = { nodeId: figma.nodeId, fileKey: figma.fileKey, receiver: `http://127.0.0.1:${cfg.receiverPort ?? 4601}`, breakpoints: cfg.pages.breakpoints };
+    const p = { nodeId: figma.nodeId, fileKey: figma.fileKey, receiver: `http://127.0.0.1:${cfg.receiverPort ?? 4601}`, breakpoints: breakpointsForSnippet(cfg.pages.breakpoints) };
     console.log('// Выполни в странице Figma (javascript_tool / evaluate_script), результат — JSON:');
     console.log(fs.readFileSync(path.join(DIR, 'probe.js'), 'utf8').replace('__CU__', JSON.stringify(p)));
     return;

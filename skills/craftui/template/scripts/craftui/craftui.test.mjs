@@ -424,3 +424,104 @@ describe('a real screen: frames without auto-layout, texts, component instances'
     expect(shortTexts('<b>{"Подтвердить"}</b>')).toBe('<b>{"Подтвердить"}</b>');
   });
 });
+
+describe('a screen given as a group: mockups, shared parts, kit instances', () => {
+  const ctx = () => ({ prefix: '', tokens: { byVariable: new Map(), byStyle: new Map(), figmaCssNames: new Map() }, assets: new Map(), fonts: new Map(), instances: new Map(), inline: new Set(), resolutions: new Map() });
+
+  it('a min equal to the max before it reads as "wider than"', async () => {
+    const { breakpointProblems, breakpointRanges } = await import('./lib.mjs');
+    const bp = { mobile: { max: 600 }, tablet: { min: 600, max: 1024 }, desktop: { min: 1024 } };
+    expect(breakpointRanges(bp).map((r) => [r.min, r.max])).toEqual([[0, 600], [601, 1024], [1025, Infinity]]);
+    expect(breakpointProblems(bp)).toEqual([]);
+  });
+
+  it('same-named siblings: the instance keeps the plain key, as on the other breakpoints', () => {
+    const bar = { id: 'g', type: 'GROUP', name: 'header', x: 0, y: 0, width: 768, height: 60, children: [] };
+    const kit = { id: 'i', type: 'INSTANCE', name: 'Header', x: 0, y: 60, width: 768, height: 72, instanceOf: { key: 'h', name: 'Header' }, children: [] };
+    const node = normNode({ id: 'f', type: 'FRAME', name: 'Tablet', x: 0, y: 0, width: 768, height: 1000, children: [bar, kit] }, 'root', ctx());
+    expect(node.children.map((c) => [c.name, c.key])).toEqual([['header', 'root/header-2'], ['Header', 'root/header']]);
+  });
+
+  it('a negative auto-layout spacing becomes a negative margin of the next children', () => {
+    const kid = (id, y) => ({ id, type: 'FRAME', name: id, x: 0, y, width: 320, height: 100, fills: [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }], children: [] });
+    const node = normNode({ id: 'f', type: 'FRAME', name: 'Mobile', layoutMode: 'VERTICAL', itemSpacing: -32, x: 0, y: 0, width: 320, height: 168, css: { display: 'flex', gap: '-32px' }, children: [kid('nav', 0), kid('content', 68)] }, 'root', ctx());
+    expect(node.css.gap).toBeUndefined();
+    expect(node.children[1].css['margin-top']).toBe('-32px');
+    expect(node.children[0].css?.['margin-top']).toBeUndefined();
+  });
+
+  it('a mockup at the top edge drops out and takes its height off the page; one elsewhere just goes', async () => {
+    const { dropLayers } = await import('./normalize-page.mjs');
+    const box = (key, y, h, extra = {}) => ({ key, figmaId: key, box: { x: 0, y, w: 320, h }, ...extra });
+    const tree = box('root', 0, 812, {
+      css: { display: 'flex', height: '812px' },
+      children: [
+        box('root/nav', 0, 210, { css: { display: 'flex', height: '210px' }, children: [box('root/nav/status', 0, 48), box('root/nav/title', 48, 40), box('root/nav/pic', 78, 132, { css: { position: 'absolute', top: '78px' } })] }),
+        box('root/content', 210, 600, { children: [box('root/content/ad', 500, 50)] }),
+      ],
+    });
+    const dropped = new Set();
+    expect(dropLayers(tree, new Set(['root/nav/status', 'root/content/ad']), 0, dropped)).toBe(48);
+    expect(tree.css.height).toBe('764px');
+    expect(tree.children[0].css.height).toBe('162px');
+    expect(tree.children[0].children.map((c) => c.key)).toEqual(['root/nav/title', 'root/nav/pic']);
+    expect(tree.children[0].children[1].css.top).toBe('30px');
+    expect(tree.children[1].children).toEqual([]);
+    expect([...dropped].sort()).toEqual(['root/content/ad', 'root/nav/status']);
+  });
+
+  it('a frame without auto-layout is laid out by position even if Figma guessed a flex layout in layer order', async () => {
+    const { flowLayout } = await import('./normalize-page.mjs');
+    const tree = {
+      key: 'root',
+      free: true,
+      box: { x: 0, y: 0, w: 1440, h: 1124 },
+      css: { display: 'flex', 'flex-direction': 'column', gap: '32px', padding: '24px 120px 100px 120px', 'align-items': 'center' },
+      children: [
+        { key: 'root/content', box: { x: 426, y: 128, w: 589, h: 896 }, css: {}, children: [{ key: 'root/content/pic', box: { x: -16, y: 0, w: 605, h: 40 }, css: {} }] },
+        { key: 'root/header', box: { x: 120, y: 24, w: 1200, h: 72 }, css: {} },
+      ],
+    };
+    flowLayout(tree, { frameWidth: 1440 });
+    expect(tree.children.map((c) => c.key)).toEqual(['root/header', 'root/content']);
+    expect(tree.css.gap).toBeUndefined();
+    expect(tree.css.padding).toBeUndefined();
+    expect(tree.children[1].css).toMatchObject({ 'margin-top': '32px', 'align-self': 'center' });
+    expect(tree.children[1].css['padding-left']).toBe('0px'); // a picture hanging out gives no negative padding
+  });
+
+  it('a kit instance on a page: state flags, its label inside a nested instance, no caption from a boolean', async () => {
+    const { componentJsx } = await import('./digest-page.mjs');
+    const label = { id: 'l', type: 'INSTANCE', name: 'Label', x: 0, y: 0, width: 80, height: 20, instanceOf: { key: 'lab', name: 'Label' }, children: [{ id: 't', type: 'TEXT', name: 'Label', x: 0, y: 0, width: 80, height: 20, characters: 'Продолжить', fills: [] }] };
+    const inst = { id: 'b', type: 'INSTANCE', name: 'BasicButton 48 M', x: 0, y: 0, width: 200, height: 48, instanceOf: { key: 'bb', name: 'BasicButton 48 M' }, variantProperties: { View: 'Accent', Disabled: 'True', Hovered: 'False' }, componentProperties: { Caption: { value: false } }, children: [label] };
+    const node = normNode({ id: 'f', type: 'FRAME', name: 'F', x: 0, y: 0, width: 300, height: 100, children: [inst] }, 'root', ctx());
+    const spec = {
+      props: [
+        { figma: 'View', role: 'prop', react: 'view', map: { Accent: 'accent' }, default: 'Default' },
+        { figma: 'Disabled', role: 'state', react: null, map: { False: null, True: { flag: 'disabled' } } },
+        { figma: 'Hovered', role: 'state', react: null, map: { False: null, True: { pseudo: 'hover' } } },
+        { figma: 'Caption', role: 'text', react: 'caption', default: false },
+        { figma: 'Label', role: 'text', react: 'children', synthetic: true, default: 'Label' },
+      ],
+    };
+    expect(componentJsx(node.children[0].instance, 'BasicButton', spec, 'next')).toBe('<BasicButton className={styles.next} view="accent" disabled>{"Продолжить"}</BasicButton>');
+  });
+
+  it('graphic instances: one SVG per variant and property values, not per size', () => {
+    const step = (id, variant, w) => ({ id, type: 'INSTANCE', name: 'Step', x: 0, y: 0, width: w, height: 36, instanceOf: { id: `main-${variant}`, key: 'step', name: 'Step' }, variantProperties: { State: variant }, children: [{ id: `${id}v`, type: 'VECTOR', name: 'v', x: 0, y: 0, width: 10, height: 10 }] });
+    const c = ctx();
+    const title = { id: 't', type: 'TEXT', name: 'Title', x: 0, y: 0, width: 100, height: 20, characters: 'Детали', fills: [] };
+    normNode({ id: 'f', type: 'FRAME', name: 'F', x: 0, y: 0, width: 600, height: 40, children: [title, step('a', 'Done', 110), step('b', 'Done', 120), step('c', 'Current', 110)] }, 'root', c);
+    expect([...c.assets.values()].map((a) => a.file)).toEqual(['assets/step.svg', 'assets/step-110x36.svg']);
+  });
+
+  it('a shared part keeps its name and is imported from src/pages/parts', async () => {
+    const { partFolder } = await import('./normalize-page.mjs');
+    const { importLines } = await import('./digest-page.mjs');
+    expect(partFolder('Claim', { name: 'Header', shared: true })).toBe('Header');
+    expect(partFolder('Claim', { name: 'Hero' })).toBe('ClaimHero');
+    const imports = { components: new Set(), parts: new Set(['ClaimHero']), shared: new Set(['Header']), images: new Map() };
+    expect(importLines(imports, 2, './assets/')).toEqual([`import { ClaimHero } from './parts/ClaimHero';`, `import { Header } from '../parts/Header';`]);
+    expect(importLines({ ...imports, parts: new Set() }, 4, '../../assets/')).toEqual([`import { Header } from '../../../parts/Header';`]);
+  });
+});

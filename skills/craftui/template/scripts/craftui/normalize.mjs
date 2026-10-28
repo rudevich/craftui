@@ -638,19 +638,26 @@ const keyOf = (name) => {
   return s.length > 60 ? s.slice(0, 60).replace(/-[^-]*$/, '') : s;
 };
 
+// Same-named siblings get -2, -3…; an instance takes the plain key first, so a frame that also draws a same-named
+// mockup (a browser bar "header" above the kit's Header) keys its Header as the other breakpoints do.
 function normChildren(children, key, ctx, seen = new Map()) {
-  return children.map((c) => {
-    const base = keyOf(c.name) || c.type.toLowerCase();
-    const i = (seen.get(base) ?? 0) + 1;
-    seen.set(base, i);
-    return normNode(c, `${key}/${i > 1 ? `${base}-${i}` : base}`, ctx);
-  });
+  const bases = children.map((c) => keyOf(c.name) || c.type.toLowerCase());
+  const order = children.map((c, i) => i).sort((a, b) => Number(children[b].type === 'INSTANCE') - Number(children[a].type === 'INSTANCE') || a - b);
+  const keys = [];
+  for (const i of order) {
+    const n = (seen.get(bases[i]) ?? 0) + 1;
+    seen.set(bases[i], n);
+    keys[i] = n > 1 ? `${bases[i]}-${n}` : bases[i];
+  }
+  return children.map((c, i) => normNode(c, `${key}/${keys[i]}`, ctx));
 }
 
 export function normNode(n, key, ctx) {
   const node = { key, name: n.name, type: n.type, figmaId: n.id };
   if (typeof n.width === 'number') node.box = { x: r2(n.x ?? 0), y: r2(n.y ?? 0), w: r2(n.width), h: r2(n.height) };
   if (n.layoutPositioning === 'ABSOLUTE') node.absolute = true;
+  // Layers placed by x/y (no auto-layout): getCSSAsync may still guess a flex layout, in layer order, not reading order.
+  if (n.layoutMode === 'NONE' && n.type !== 'GROUP' && n.children?.length) node.free = true;
   if (n.css) node.css = mapCssVars(n.css, ctx);
   // Figma lays text lines out on whole pixels: 16px at 140% is 22px there, a browser would give 22.4px.
   // getCSSAsync writes it as "140% /* 22.4px */"; a token in its place stays.
@@ -688,7 +695,7 @@ export function normNode(n, key, ctx) {
     const walk = (c) => {
       if (c.visible === false) return;
       if (c.type === 'TEXT' && !(c.name in texts)) texts[c.name] = c.characters?.replace(/[\u2028\u2029]/g, '\n');
-      if (c.type !== 'INSTANCE') c.children?.forEach(walk);
+      c.children?.forEach(walk); // kits wrap the label in an instance of their own (Label → TEXT)
     };
     n.children?.forEach(walk);
     if (Object.keys(texts).length) node.instance.texts = texts;
@@ -699,12 +706,16 @@ export function normNode(n, key, ctx) {
   if (isGraphic(n)) {
     if (node.instance) ctx.instances.get(node.instance.key).graphic = true;
     // A plain frame is known only by its name: "Content" 24×24 and "Content" 16×16 hold different icons.
-    const assetKey = node.instance?.key ?? (isOverlay(n) ? n.name : `${n.name} ${r2(n.width)}×${r2(n.height)}`);
+    // An instance draws its variant with its property values (steps of a stepper: done, current, not started); its SVG scales.
+    const assetKey = node.instance
+      ? `${node.instance.key} ${n.instanceOf.id} ${JSON.stringify(node.instance.props ?? {})}`
+      : isOverlay(n) ? n.name : `${n.name} ${r2(n.width)}×${r2(n.height)}`;
     if (!ctx.assets.has(assetKey)) {
       const base = slug(node.instance?.name ?? n.name) || 'graphic';
-      const taken = [...ctx.assets.values()].some((a) => a.file === `assets/${base}.svg`);
-      const file = `assets/${taken ? `${base}-${Math.round(n.width)}x${Math.round(n.height)}` : base}.svg`;
-      ctx.assets.set(assetKey, { key: assetKey, name: n.name, nodeId: n.id, file });
+      const taken = (f) => [...ctx.assets.values()].some((a) => a.file === `assets/${f}.svg`);
+      let name = taken(base) ? `${base}-${Math.round(n.width)}x${Math.round(n.height)}` : base;
+      for (let i = 2; taken(name); i++) name = `${base}-${Math.round(n.width)}x${Math.round(n.height)}-${i}`;
+      ctx.assets.set(assetKey, { key: assetKey, name: n.name, nodeId: n.id, file: `assets/${name}.svg` });
     }
     node.asset = ctx.assets.get(assetKey).file;
     return node; // graphics are exported as SVG, their inner vectors do not matter
@@ -739,6 +750,15 @@ export function normNode(n, key, ctx) {
   if (all.length) {
     node.children = normChildren(all, key, ctx);
     hide(node.children, all);
+  }
+  // Figma lets auto-layout overlap its children (spacing -32); CSS has no negative gap: a negative margin instead.
+  const gap = /^-([\d.]+)px$/.exec(node.css?.gap ?? '')?.[1];
+  if (gap) {
+    delete node.css.gap;
+    delete node.expect?.['row-gap'];
+    delete node.expect?.['column-gap'];
+    const side = n.layoutMode === 'HORIZONTAL' ? 'margin-left' : 'margin-top';
+    node.children?.filter((c) => !c.hidden && !c.absolute).slice(1).forEach((c) => (c.css = { ...(c.css ?? {}), [side]: `-${gap}px` }));
   }
   return node;
 }
