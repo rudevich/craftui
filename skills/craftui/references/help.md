@@ -52,7 +52,7 @@
 | `slot <Name> <@ключ… \| Ось=Значение> <prop>` | слой (иконка во всех вариантах) или значение оси — содержимое пропа: `slot IconButton @root/content children` |
 | `breakpoints [mobile=<px> tablet=<px\|> desktop=<px\|>]` | брейкпоинты страниц в конфиге (верхние границы включительно, пусто — не нужен) |
 | `part <Page> <слой> <Имя> [--shared] [--remove]` | слой страницы — её внутренняя часть `parts/<Page><Имя>/`; `--shared` — общая для страниц, `src/pages/parts/<Имя>/` |
-| `skip <Page> <слой> [--remove]` | слой макета устройства (статус-бар, панель браузера) не верстать |
+| `mockup <Page> <слой> [--remove]` | слой — макет устройства (статус-бар, панель браузера): не верстать |
 | `prop <Name> "<свойство Figma>" <имя React \| -> [тип] [--role …]` | правка или добавление свойства на шаге confirm без открытия spec.json |
 | `scaffold [--force] [--add-targets]`, `svg <Name> <asset> <Icon>` | заготовки и черновики кода (разметка по слоям, стили по вариантам), новые targets в демо, TSX-иконки из ассетов (без пустых clipPath во весь размер) |
 | `brief <Name>`, `spec <Name> [<target>] [<слой>]` | выжимка spec.json для кода (~4k токенов) и точечный просмотр слоёв; сам spec.json не открывать |
@@ -78,6 +78,8 @@ src/pages/<Page>/         то же для страницы + parts/<Page><Part>
     figma/                всё выкачанное: raw/, spec.json, node-map.json, screenshots/, assets/
     visual/               скриншот-тест, visual.config.json, output/ (actual, diff)
     tests/                rstest
+scripts/craftui/          CLI craftui на TypeScript (Node 24 запускает как есть); types.ts — формы spec.json, state.json, node-map и конфига
+src/pages/parts/<Имя>/    общие части страниц (part.json — откуда сделана)
 demo/                     демо-приложение (шрифты макета — demoFonts в конфиге)
 .craftui/              служебное: копия инструкций скилла, логи установки
 ```
@@ -118,7 +120,7 @@ import { Landing } from '<pkg>/pages/Landing'; // страница (pages.export
 | В Chrome просит вход в Figma | войдите сами во вкладке, которую открыл агент, и ответьте «готово» |
 | Chrome спрашивает доступ к локальной сети для figma.com | разрешите: так данные идут на диск напрямую (receiver на 127.0.0.1:4601) |
 | `pluginApi: false` | откройте в файле Plugins → Development → Open console; read-only файл — сделайте копию |
-| Тесты rstest не стартуют | Node.js `^20.19 || >=22.12` |
+| Тесты rstest или скрипты не стартуют | Node.js 24 или новее (`node --version`) |
 | Скриншот-тест: «target is missing» | id в `<Name>.demo.tsx` должен совпадать с именем эталона |
 | Агент упал на ошибке API | `craftui continue` или `npm run craftui -- autopilot` |
 | Модель долго читает данные Figma и не начинает писать код, контекст постоянно сжимается | маленькое окно модели — см. раздел ниже |

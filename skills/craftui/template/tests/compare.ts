@@ -41,7 +41,7 @@ function contentBox(data: Buffer, width: number, height: number, scale: number):
   return { x: r(minX), y: r(minY), w: r(maxX - minX + 1), h: r(maxY - minY + 1) };
 }
 
-// The top rows of a reference that draw device chrome the page leaves out (craftui skip → target.mockTop).
+// The top rows of a reference that draw device chrome the page leaves out (craftui mockup → target.mockTop).
 function cropTop(png: PNG, rows: number): PNG {
   if (rows <= 0 || rows >= png.height) return png;
   const out = new PNG({ width: png.width, height: png.height - rows });

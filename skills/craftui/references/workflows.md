@@ -6,17 +6,17 @@
 
 - В папке есть `craftui.config.json` → выполни `npm run craftui -- status`. Если есть незавершённая работа и пользователь не просил другого, переходи к **B**.
 - Проекта нет → в плане (правило 1) предложи развернуть его:
-  1. `node <skill>/scripts/init-project.mjs`;
+  1. `node <skill>/scripts/init-project.ts`;
   2. `npm install --no-audit --no-fund > .craftui/install.log 2>&1`;
   3. `npx playwright install chromium`.
 
-  Нужна Node.js `^20.19 || >=22.12`. Если скрипт сообщает о чужом `package.json`, спроси: библиотека в подпапке или `--merge`.
-- Обновить инструменты в существующем проекте: `node <skill>/scripts/init-project.mjs --update`.
+  Нужна Node.js 24 или новее. Если скрипт сообщает о чужом `package.json`, спроси: библиотека в подпапке или `--merge`.
+- Обновить инструменты в существующем проекте: `node <skill>/scripts/init-project.ts --update`.
 - Для Claude Code и Codex предложи в плане автопродолжение: `npm run craftui -- hooks install`. Это постоянная настройка проекта, поэтому только с согласия пользователя. Хук не даёт остановиться на середине. После сжатия контекста он подсказывает текущий шаг.
 
 ## A. Новый импорт
 
-1. `npm run craftui -- url "<ссылка>"`. Если проекта ещё нет — `node <skill>/template/scripts/craftui/cli.mjs url "<ссылка>"`. Если в ссылке нет node-id, попроси ссылку на слой (ПКМ → Copy link to selection).
+1. `npm run craftui -- url "<ссылка>"`. Если проекта ещё нет — `node <skill>/template/scripts/craftui/cli.ts url "<ссылка>"`. Если в ссылке нет node-id, попроси ссылку на слой (ПКМ → Copy link to selection).
 2. **Источник:** из сообщения пользователя («через chrome» / «через figma») → `source` в `craftui.config.json` → иначе **chrome** (Chrome MCP: Claude in Chrome или chrome-devtools-mcp). Проверь, что инструменты источника доступны. Нет браузерного MCP — скажи об этом и предложи figma (Figma MCP). Если Figma MCP требует авторизации, скажи пользователю, как её пройти (в Claude Code: `/mcp`).
 3. **Разведка без записи:** узнай тип узла и имя (metadata через MCP или проба в Chrome: `craftui snippet "<ссылка>" probe`, см. справочник источника).
    - COMPONENT_SET / COMPONENT → один компонент.

@@ -55,7 +55,7 @@
 rstest в happy-dom (без браузера):
 - `src/**/craftlog/tests/*.test.tsx` — поведение компонентов: пропсы, состояния, клавиатура, доступность;
 - `demo/**/*.test.tsx` — контролы и JSX песочницы;
-- `scripts/**/*.test.mjs` — скрипты импорта.
+- `scripts/**/*.test.ts` — скрипты импорта.
 
 Один компонент: `npx rstest run src/components/<Name>`.
 

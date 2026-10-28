@@ -32,10 +32,10 @@ A skill for coding agents that imports Figma components and UI kits into a React
 **Claude Code / Codex — из клона репозитория:**
 
 ```bash
-git clone https://github.com/rudevich/craftui.git && node craftui/install.mjs
+git clone https://github.com/rudevich/craftui.git && node craftui/install.ts
 ```
 
-`install.mjs` ставит симлинк на `skills/craftui` в `~/.claude/skills` и `~/.codex/skills` (если эти папки есть). Флаги: `--claude`, `--codex`, `--target <папка skills>`, `--copy` (копия вместо симлинка). Обновление скилла — `git pull` (при симлинке).
+`install.ts` ставит симлинк на `skills/craftui` в `~/.claude/skills` и `~/.codex/skills` (если эти папки есть). Флаги: `--claude`, `--codex`, `--target <папка skills>`, `--copy` (копия вместо симлинка). Обновление скилла — `git pull` (при симлинке).
 
 **Другие агенты:** скопируйте `skills/craftui` в папку скиллов агента или подключите `SKILL.md` как инструкцию.
 
@@ -43,7 +43,7 @@ git clone https://github.com/rudevich/craftui.git && node craftui/install.mjs
 
 ## Требования
 
-- Node.js `^20.19 || >=22.12`
+- Node.js 24 или новее: скрипты скилла на TypeScript, Node запускает их сам, без сборки
 - Figma MCP (удалённый или из Figma Desktop) или браузерный MCP с вашим Chrome (Claude in Chrome / chrome-devtools-mcp)
 
 ## Устройство
@@ -52,13 +52,16 @@ git clone https://github.com/rudevich/craftui.git && node craftui/install.mjs
 skills/craftui/
   SKILL.md              сценарий для агента
   references/           справочники по шагам (читаются по необходимости)
-  scripts/init-project.mjs   разворачивает/обновляет проект библиотеки в рабочей папке
+  scripts/init-project.ts    разворачивает/обновляет проект библиотеки в рабочей папке
+  scripts/check.ts           проверка кода скилла: npm run check (типы, тесты скриптов)
   template/             шаблон проекта: rspack (библиотека + демо), rstest, Playwright, CLI craftui
 .claude-plugin/         манифест плагина и маркетплейса Claude Code
-install.mjs             установка в ~/.claude/skills и ~/.codex/skills
+install.ts              установка в ~/.claude/skills и ~/.codex/skills
 ```
 
-Вся детерминированная логика (состояние, извлечение, normalize, токены, заготовки, проверка, автопродолжение) живёт в проекте как `scripts/craftui`. Инструкции копируются в `.craftui/skill/`, так что начатый импорт может продолжить любой агент.
+Вся детерминированная логика (состояние, извлечение, normalize, токены, заготовки, проверка, автопродолжение) живёт в проекте как `scripts/craftui` на TypeScript. Формы данных (`spec.json`, конфиг, state, сырые данные Figma) описаны в `scripts/craftui/types.ts`. Код, который выполняется в странице Figma, лежит в `scripts/craftui/snippets/`: перед отправкой в браузер с него снимаются типы.
+
+После правок скриптов: `npm run check` в корне репозитория (типы скриптов и сниппетов, тесты скриптов). Инструкции копируются в `.craftui/skill/`, так что начатый импорт может продолжить любой агент.
 
 ## Лицензия
 

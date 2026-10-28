@@ -2,7 +2,7 @@
 // (dist/pages/<Page>/index.js, when pages.export is on) plus dist/tokens.css. Folders come from craftui.config.json → dirs.
 import fs from 'node:fs';
 import path from 'node:path';
-import { config } from './scripts/craftui/lib.mjs';
+import { config } from './scripts/craftui/lib.ts';
 
 const cfg = config();
 const entitiesIn = (dir) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((name) => fs.existsSync(path.join(dir, name, 'index.ts'))) : []);

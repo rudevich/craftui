@@ -1,0 +1,11 @@
+{
+  "name": "craftui-repo",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "check": "node skills/craftui/scripts/check.ts"
+  }
+}

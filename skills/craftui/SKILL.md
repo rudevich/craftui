@@ -42,7 +42,7 @@ npm run craftui -- done <Name> <step>
 
 ## Сценарии (подробно — `references/workflows.md`)
 
-- **Вход.** Есть `craftui.config.json` → `status`; нет проекта → предложи `node <skill>/scripts/init-project.mjs` и `npm install`.
+- **Вход.** Есть `craftui.config.json` → `status`; нет проекта → предложи `node <skill>/scripts/init-project.ts` и `npm install`.
 - **A. Новый импорт.** `craftui url` → вид и источник → разведка → план и имя → `craftui new [component|page] <Name> "<ссылка>"` → цикл. Странице нужны брейкпоинты конфига: не заданы — спроси пользователя (`kind-page.md`).
 - **B. Продолжение.** `next` → план оставшихся шагов → цикл.
 - **C. Правки.** Лог и файлы компонента → план → правка → `craftui verify <Name>` → `craftui log`. Отход от макета — в «Отклонения» лога и порог или маска с reason.
