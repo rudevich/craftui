@@ -147,8 +147,10 @@ async function styleCheck(target: Locator, folder: string, tree: SpecNode, nodeM
         } else if (prop === 'font-family') {
           same = actual.toLowerCase().includes(expected.toLowerCase().replace(/["']/g, '').split(',')[0].trim());
         } else if (!Number.isNaN(num(expected))) {
-          // Figma rounds text boxes to whole pixels, the browser does not: sizes get 1.5px.
-          same = Math.abs(num(expected) - num(actual)) <= (prop === 'width' || prop === 'height' ? 1.5 : 0.5);
+          // Figma rounds text boxes to whole pixels, the browser does not: sizes get 1.5px. Letter spacing adds up
+          // over every letter of a line (0.3px is 6px on a title), so it gets almost none.
+          const tolerance = prop === 'width' || prop === 'height' ? 1.5 : prop === 'letter-spacing' ? 0.05 : 0.5;
+          same = Math.abs(num(expected) - num(actual)) <= tolerance;
         } else {
           same = expected === actual;
         }

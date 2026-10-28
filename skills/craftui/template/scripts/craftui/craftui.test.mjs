@@ -537,7 +537,7 @@ describe('variable modes a layer switches (dark theme, typography)', () => {
       { id: 'lh', name: 'Header/H2/lineHeight', collectionId: 'ty', resolvedType: 'FLOAT', scopes: ['LINE_HEIGHT'], valuesByMode: { l: 32, xs: 24 } },
     ],
     styles: [
-      { id: 'h2', name: 'Header/H2 B', type: 'TEXT', fontName: { family: 'SB Sans Display', style: 'Bold' }, fontSize: 32, lineHeight: { unit: 'PIXELS', value: 32 }, boundVariables: { fontSize: { type: 'VARIABLE_ALIAS', id: 'size' }, lineHeight: { type: 'VARIABLE_ALIAS', id: 'lh' } } },
+      { id: 'h2', name: 'Header/H2 B', type: 'TEXT', fontName: { family: 'SB Sans Display', style: 'Bold' }, fontSize: 32, lineHeight: { unit: 'PIXELS', value: 32 }, letterSpacing: { unit: 'PERCENT', value: -4 }, boundVariables: { fontSize: { type: 'VARIABLE_ALIAS', id: 'size' }, lineHeight: { type: 'VARIABLE_ALIAS', id: 'lh' } } },
       { id: 'body', name: 'Body M', type: 'TEXT', fontName: { family: 'SB Sans Display', style: 'Regular' }, fontSize: 16, lineHeight: { unit: 'PERCENT', value: 140 } },
     ],
   };
@@ -557,6 +557,16 @@ describe('variable modes a layer switches (dark theme, typography)', () => {
     expect(value('--font-header-h2-b-size')).toEqual({ default: '32px', 'typography=extra-small-screens': '24px' });
     expect(value('--font-header-h2-b-line-height')).toEqual({ default: '32px', 'typography=extra-small-screens': '24px' });
     expect(value('--font-body-m-line-height')).toEqual({ default: '22px' });
+    // -4 % of the size: the spacing follows the size's modes, 0.32px per letter adds up over a title
+    expect(value('--font-header-h2-b-letter-spacing')).toEqual({ default: '-1.28px', 'typography=extra-small-screens': '-0.96px' });
+  });
+
+  it('the brief names the tokens a layer\'s mode changes, to give back on wider screens', async () => {
+    const { modeTokens } = await import('./digest-page.mjs');
+    const { list } = await tokens();
+    const title = { key: 'root/title', modes: { 'data-typography': 'extra-small-screens' }, tokens: { 'font-size': '--font-header-h2-b-size', 'font-weight': '--font-header-h2-b-weight', 'letter-spacing': '--font-header-h2-b-letter-spacing' } };
+    const lines = modeTokens({ tokens: list, targets: [{ id: 'mobile', tree: { key: 'root', children: [title] } }] });
+    expect(lines).toEqual(['ⓘ mobile: root/title в data-typography="extra-small-screens" меняет --font-header-h2-b-size, --font-header-h2-b-letter-spacing; один элемент на все ширины — шире верни их: --font-header-h2-b-size: inherit; --font-header-h2-b-letter-spacing: inherit']);
   });
 
   it('a layer keeps its modes, also when its wrapper collapses into it', async () => {

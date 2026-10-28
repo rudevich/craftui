@@ -224,18 +224,24 @@ export function buildTokens(raw, ctx) {
   }
 
   // A text style that binds its size or line height to variables follows their modes (Typography → ExtraSmallScreens):
-  // its token gets a value per mode, in the same [data-typography="…"] blocks as the variables.
+  // its token gets a value per mode, in the same [data-typography="…"] blocks as the variables. A value given in
+  // percent of the size (letter spacing -4 %) follows the size: -0.96px at 24px, -1.28px at 32px.
   function styleModes(s, prop) {
     const field = { 'font-size': 'fontSize', 'line-height': 'lineHeight', 'letter-spacing': 'letterSpacing', 'font-weight': 'fontWeight' }[prop];
-    const v = field && vars.get(s.boundVariables?.[field]?.id);
-    if (!v) return {};
+    const bound = (f) => f && vars.get(s.boundVariables?.[f]?.id);
+    if (bound(field)) return perMode(bound(field), toCss);
+    const pct = s[field]?.unit === 'PERCENT' ? s[field].value : null;
+    if (pct === null || !bound('fontSize')) return {};
+    return perMode(bound('fontSize'), (r) => (prop === 'line-height' ? lineHeight(s[field], r.value) : letterSpacing(s[field], r.value)));
+  }
+  function perMode(v, css) {
     const out = {};
     const base = resolve(v, {});
     for (const c of collectionsOf(v)) {
       for (const m of c.modes ?? []) {
         if (m.modeId === c.defaultModeId) continue;
         const r = resolve(v, { [colName(c)]: m.name });
-        if (r && base && toCss(r) !== toCss(base)) out[`${slug(colName(c))}=${slug(m.name)}`] = toCss(r);
+        if (r && base && css(r) !== css(base)) out[`${slug(colName(c))}=${slug(m.name)}`] = css(r);
       }
     }
     return out;

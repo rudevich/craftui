@@ -204,6 +204,26 @@ export function markup(node, ctx, depth = 0) {
 }
 
 /**
+ * What a mode attribute changes on its layer: the tokens the layer takes that have a value in that mode. Merging the
+ * layer with other breakpoints into one element, the wider ones get them back with `--token: inherit`.
+ */
+export function modeTokens(spec) {
+  const out = new Map();
+  for (const t of spec.targets) {
+    const walk = (n) => {
+      for (const [attr, value] of Object.entries(n.modes ?? {})) {
+        const mode = `${attr.replace(/^data-/, '')}=${value}`;
+        const changed = Object.values(n.tokens ?? {}).filter((name) => spec.tokens?.some((x) => x.name === name && x.values?.[mode]));
+        if (changed.length) out.set(`${n.key} ${attr}`, `ⓘ ${t.id}: ${n.key} в ${attr}="${value}" меняет ${changed.join(', ')}; один элемент на все ширины — шире верни их: ${changed.map((c) => `${c}: inherit`).join('; ')}`);
+      }
+      n.children?.forEach(walk);
+    };
+    walk(t.tree);
+  }
+  return [...out.values()];
+}
+
+/**
  * Modes a layer switches, from the narrowest frame that has it (mobile first). A mode some widths do not set
  * (the title in Typography=ExtraSmallScreens on mobile only) is a note for the code step, as width-bound props are.
  */
@@ -275,6 +295,7 @@ export function pageBrief(e, spec, nodeMap) {
     '',
     `Компоненты из ${kindDirs().component}: ${[...ctx.imports.components].join(', ') || 'нет'} — их API не меняй, положение задаёт страница через className.`,
     ...ctx.notes.map((n) => `⚠ ${n} — в разметке значение самого узкого брейкпоинта`),
+    ...modeTokens(spec),
     ...(spec.instances.filter((i) => !i.resolution).length ? [`Не решено (сначала craftui deps ${e.name}): ${spec.instances.filter((i) => !i.resolution).map((i) => i.name.trim()).join(', ')}`] : []),
     `Картинки и графика: ${spec.assets.map((a) => a.file).join(', ') || 'нет'} (копии — в assets/ страницы; alt — по смыслу, декоративные — alt="").`,
     ...(spec.warnings ?? []).map((w) => `⚠ ${w}`),
