@@ -14,6 +14,7 @@
   const plain = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v, (k, x) => (x === figma.mixed ? 'mixed' : x))));
   const variableIds = new Set();
   const styleIds = new Set();
+  const modeCollections = new Set(); // collections whose mode a layer sets (dark theme on a card, typography of a title)
   const instances = new Map();
   const images = []; // layers filled with a picture: exported as PNG for pages
   let count = 0;
@@ -36,7 +37,7 @@
     'bottomLeftRadius', 'bottomRightRadius', 'effects', 'boundVariables',
     'characters', 'fontName', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textCase', 'textDecoration',
     'textAlignHorizontal', 'textAlignVertical', 'textAutoResize', 'textTruncation', 'maxLines',
-    'fillStyleId', 'strokeStyleId', 'effectStyleId', 'textStyleId', 'componentPropertyReferences',
+    'fillStyleId', 'strokeStyleId', 'effectStyleId', 'textStyleId', 'componentPropertyReferences', 'explicitVariableModes',
   ];
 
   async function ser(n) {
@@ -54,6 +55,7 @@
     }
     collectAliases(o.boundVariables);
     collectAliases(o.fills);
+    for (const id of Object.keys(o.explicitVariableModes ?? {})) modeCollections.add(id);
     // A layer filled with a picture (photo, illustration): exported as PNG, rendered as <img> on a page.
     if (Array.isArray(o.fills) && o.fills.some((f) => f.type === 'IMAGE' && f.visible !== false)) {
       o.image = true;
@@ -104,6 +106,21 @@
   }
 
   async function variablesAndStyles() {
+    // Styles first: a text style binds its size and line height to variables (typography modes), they are fetched too.
+    const styles = [];
+    for (const id of styleIds) {
+      try {
+        const s = await figma.getStyleByIdAsync(id);
+        if (!s) continue;
+        const o = { id: s.id, key: s.key, name: s.name, type: s.type, remote: s.remote };
+        if (s.type === 'PAINT') o.paints = plain(s.paints);
+        if (s.type === 'EFFECT') o.effects = plain(s.effects);
+        if (s.type === 'TEXT') Object.assign(o, plain({ fontName: s.fontName, fontSize: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, textCase: s.textCase, textDecoration: s.textDecoration, boundVariables: s.boundVariables }));
+        collectAliases(o.boundVariables);
+        styles.push(o);
+      } catch {}
+    }
+
     // Variables (and their aliases) used anywhere in the tree.
     const variables = [];
     const collections = new Map();
@@ -129,16 +146,12 @@
       } catch {}
     }
 
-    const styles = [];
-    for (const id of styleIds) {
+    // Collections a layer switches the mode of: their names and modes give the data-* attribute of that layer.
+    for (const id of modeCollections) {
+      if (collections.has(id)) continue;
       try {
-        const s = await figma.getStyleByIdAsync(id);
-        if (!s) continue;
-        const o = { id: s.id, key: s.key, name: s.name, type: s.type, remote: s.remote };
-        if (s.type === 'PAINT') o.paints = plain(s.paints);
-        if (s.type === 'EFFECT') o.effects = plain(s.effects);
-        if (s.type === 'TEXT') Object.assign(o, plain({ fontName: s.fontName, fontSize: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, textCase: s.textCase, textDecoration: s.textDecoration }));
-        styles.push(o);
+        const col = await figma.variables.getVariableCollectionByIdAsync(id);
+        if (col) collections.set(id, { id: col.id, name: col.name, defaultModeId: col.defaultModeId, modes: plain(col.modes) });
       } catch {}
     }
     return { variables, collections: [...collections.values()], styles };

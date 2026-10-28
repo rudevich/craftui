@@ -525,3 +525,67 @@ describe('a screen given as a group: mockups, shared parts, kit instances', () =
     expect(importLines({ ...imports, parts: new Set() }, 4, '../../assets/')).toEqual([`import { Header } from '../../../parts/Header';`]);
   });
 });
+
+describe('variable modes a layer switches (dark theme, typography)', () => {
+  const raw = {
+    collections: [
+      { id: 'th', name: '01. Theme', defaultModeId: 'light', modes: [{ modeId: 'light', name: '🌕 Light' }, { modeId: 'dark', name: '🌑 Dark' }] },
+      { id: 'ty', name: '03. Typography', defaultModeId: 'l', modes: [{ modeId: 'l', name: 'LargeScreen' }, { modeId: 'xs', name: 'ExtraSmallScreens' }] },
+    ],
+    variables: [
+      { id: 'size', name: 'Header/H2/Font Size', collectionId: 'ty', resolvedType: 'FLOAT', scopes: ['FONT_SIZE'], valuesByMode: { l: 32, xs: 24 } },
+      { id: 'lh', name: 'Header/H2/lineHeight', collectionId: 'ty', resolvedType: 'FLOAT', scopes: ['LINE_HEIGHT'], valuesByMode: { l: 32, xs: 24 } },
+    ],
+    styles: [
+      { id: 'h2', name: 'Header/H2 B', type: 'TEXT', fontName: { family: 'SB Sans Display', style: 'Bold' }, fontSize: 32, lineHeight: { unit: 'PIXELS', value: 32 }, boundVariables: { fontSize: { type: 'VARIABLE_ALIAS', id: 'size' }, lineHeight: { type: 'VARIABLE_ALIAS', id: 'lh' } } },
+      { id: 'body', name: 'Body M', type: 'TEXT', fontName: { family: 'SB Sans Display', style: 'Regular' }, fontSize: 16, lineHeight: { unit: 'PERCENT', value: 140 } },
+    ],
+  };
+  const tokens = async () => (await import('./normalize.mjs')).buildTokens(raw, { prefix: '' });
+  const ctx = async () => ({ prefix: '', tokens: await tokens(), assets: new Map(), fonts: new Map(), instances: new Map(), inline: new Set(['btn']), resolutions: new Map() });
+
+  it('a mode is the attribute tokens.css keys it by; the default mode needs none', async () => {
+    const { modeAttr } = await tokens();
+    expect(modeAttr('th', 'dark')).toEqual(['data-theme', 'dark']);
+    expect(modeAttr('ty', 'xs')).toEqual(['data-typography', 'extra-small-screens']);
+    expect(modeAttr('th', 'light')).toBeNull();
+  });
+
+  it('a text style bound to variables follows their modes; a percent line height is whole pixels', async () => {
+    const { list } = await tokens();
+    const value = (name) => list.find((t) => t.name === name)?.values;
+    expect(value('--font-header-h2-b-size')).toEqual({ default: '32px', 'typography=extra-small-screens': '24px' });
+    expect(value('--font-header-h2-b-line-height')).toEqual({ default: '32px', 'typography=extra-small-screens': '24px' });
+    expect(value('--font-body-m-line-height')).toEqual({ default: '22px' });
+  });
+
+  it('a layer keeps its modes, also when its wrapper collapses into it', async () => {
+    const c = await ctx();
+    const text = { id: 't', type: 'TEXT', name: 'Title', x: 0, y: 0, width: 200, height: 24, characters: 'Опишите подробности', fills: [], explicitVariableModes: { ty: 'xs' } };
+    const label = { id: 'c', type: 'FRAME', name: 'Content', x: 0, y: 0, width: 140, height: 24, layoutMode: 'HORIZONTAL', children: [{ id: 'l', type: 'TEXT', name: 'Label', x: 0, y: 0, width: 140, height: 24, characters: 'Назад', fills: [] }] };
+    const back = { id: 'b', type: 'INSTANCE', name: 'Back', x: 0, y: 30, width: 140, height: 24, instanceOf: { key: 'btn', name: 'Back' }, explicitVariableModes: { th: 'dark' }, children: [label] };
+    const node = normNode({ id: 'f', type: 'FRAME', name: 'F', x: 0, y: 0, width: 320, height: 100, layoutMode: 'VERTICAL', children: [text, back] }, 'root', c);
+    expect(node.children[0].modes).toEqual({ 'data-typography': 'extra-small-screens' });
+    expect(node.children[1].modes).toEqual({ 'data-theme': 'dark' });
+  });
+
+  it('drafts carry the attributes: on the element, on a component, a mode some widths do not set is a note', async () => {
+    const { markup, markupContext, componentJsx } = await import('./digest-page.mjs');
+    const { markupDraft } = await import('./digest.mjs');
+    const frame = (id, w, modes) => ({ id, breakpoint: id, size: { width: w, height: 400 }, frame: { width: w }, props: {}, tree: { key: 'root', type: 'FRAME', box: { w, h: 400 }, children: [{ key: 'root/title', type: 'TEXT', text: { characters: 'Опишите подробности' }, ...(modes ? { modes } : {}) }] } });
+    const spec = { name: 'P', targets: [frame('desktop', 1440), frame('mobile', 320, { 'data-typography': 'extra-small-screens' })], instances: [], parts: [] };
+    const ctx = markupContext(spec, { root: 'frame', 'root/title': 'title' }, '');
+    const lines = markup(spec.targets[1].tree.children[0], ctx);
+    expect(lines.at(-1)).toBe('<span className={styles.title} data-typography="extra-small-screens">{"Опишите подробности"}</span>');
+    expect(lines[0]).toMatch(/режим меняется с шириной: mobile data-typography="extra-small-screens"; desktop по умолчанию/);
+    expect(ctx.notes).toHaveLength(1);
+    expect(componentJsx({ variant: {} }, 'BasicButton', { props: [] }, 'back', ' data-theme="dark"')).toBe('<BasicButton className={styles.back} data-theme="dark" />');
+    const comp = { props: [], targets: [{ id: 'default', props: {}, tree: { key: 'root', children: [{ key: 'root/badge', text: { characters: 'Web' }, modes: { 'data-theme': 'dark' } }, { key: 'root/wrap', modes: { 'data-theme': 'dark' }, children: [{ key: 'root/wrap/dot', children: [] }] }] } }] };
+    expect(markupDraft(comp, { root: 'root', 'root/badge': 'badge', 'root/wrap/dot': 'dot' }, '')).toEqual([
+      '<span className={styles.badge} data-theme="dark">{"Web"}</span>',
+      `<span data-theme="dark" style={{ display: 'contents' }}>`,
+      '  <span className={styles.dot}></span>',
+      '</span>',
+    ]);
+  });
+});

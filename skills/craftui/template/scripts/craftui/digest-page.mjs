@@ -2,7 +2,7 @@
 // at the borders of craftui.config.json → pages.breakpoints, components from src/components and inner parts.
 import path from 'node:path';
 import { breakpointRanges, camel, config, describeBreakpoints, kindDirs, readJson } from './lib.mjs';
-import { block, cap, classDecls } from './digest.mjs';
+import { block, cap, classDecls, modeAttrs } from './digest.mjs';
 import { partFolder } from './normalize-page.mjs';
 
 const localOf = (cls) => cls.split('/').pop();
@@ -126,8 +126,8 @@ export function pageCss(name, spec, nodeMap, bp = config().pages.breakpoints) {
 const compDir = () => path.basename(kindDirs().component);
 
 /** <Button size="m" view="accent">Купить</Button>: Figma values of the instance through the component's own spec. */
-export function componentJsx(inst, compName, compSpec, className) {
-  const attrs = className ? [`className={styles.${className}}`] : [];
+export function componentJsx(inst, compName, compSpec, className, modes) {
+  const attrs = [...(className ? [`className={styles.${className}}`] : []), ...(modes ? [modes.trim()] : [])];
   let children = null;
   for (const p of compSpec?.props ?? []) {
     const figmaValue = inst.variant?.[p.figma] ?? inst.props?.[p.figma];
@@ -165,6 +165,7 @@ export function markup(node, ctx, depth = 0) {
     return [`${pad}<${folder} />`];
   }
   const cls = ctx.nodeMap[node.key] ? localOf(ctx.nodeMap[node.key]) : null;
+  const { modes, modeNote } = modesAt(node.key, ctx, pad);
   if (node.instance && !node.asset) {
     const inst = ctx.spec.instances.find((i) => i.key === node.instance.key);
     const entity = /^entity:component\/(\w+)$/.exec(inst?.resolution ?? '')?.[1];
@@ -175,29 +176,44 @@ export function markup(node, ctx, depth = 0) {
         .sort((a, b) => a.size.width - b.size.width)
         .map((t) => ({ t, inst: findKey(t.tree, node.key)?.instance }))
         .filter((x) => x.inst);
-      const jsx = byWidth.map(({ inst }) => componentJsx(inst, entity, ctx.compSpec(entity), cls));
+      const jsx = byWidth.map(({ inst }) => componentJsx(inst, entity, ctx.compSpec(entity), cls, modes));
       const note = new Set(jsx).size > 1 ? [`${pad}{/* ${entity} меняется с шириной: ${byWidth.map(({ t }, i) => `${t.id} ${jsx[i].replace(/^<\w+\s?|\s?\/?>.*$/g, '').replace(/className=\{[^}]+\}\s?/, '') || 'по умолчанию'}`).join('; ')} — выбери проп или переключай по ширине */}`] : [];
       if (note.length) ctx.notes.push(`${entity} (${node.key}): пропсы зависят от ширины`);
-      return [...note, `${pad}${jsx[0] ?? componentJsx(node.instance, entity, ctx.compSpec(entity), cls)}`];
+      return [...modeNote, ...note, `${pad}${jsx[0] ?? componentJsx(node.instance, entity, ctx.compSpec(entity), cls, modes)}`];
     }
     if (inst?.resolution !== 'inline') return [`${pad}{/* TODO: ${node.instance.name.trim()} — npm run craftui -- deps ${ctx.spec.name} */}`];
   }
-  const own = cls ? ` className={styles.${cls}}` : '';
+  const own = `${cls ? ` className={styles.${cls}}` : ''}${modes}`;
   if (node.picture) {
     const img = camel(`img ${path.basename(node.picture, '.png')}`);
     ctx.imports.images.set(img, node.picture);
-    return [`${pad}<img${own} src={${img}} alt="" />`];
+    return [...modeNote, `${pad}<img${own} src={${img}} alt="" />`];
   }
   if (node.asset) {
     const img = camel(`graphic ${path.basename(node.asset, '.svg')}`);
     ctx.imports.images.set(img, node.asset);
-    return [`${pad}<img${own} src={${img}} alt="" />`];
+    return [...modeNote, `${pad}<img${own} src={${img}} alt="" />`];
   }
-  if (node.text) return cls ? [`${pad}<span${own}>{${JSON.stringify(node.text.characters ?? '')}}</span>`] : [`${pad}{${JSON.stringify(node.text.characters ?? '')}}`];
+  if (node.text) return [...modeNote, own ? `${pad}<span${own}>{${JSON.stringify(node.text.characters ?? '')}}</span>` : `${pad}{${JSON.stringify(node.text.characters ?? '')}}`];
   const kids = node.children ?? [];
-  if (!cls) return kids.flatMap((c) => markup(c, ctx, depth));
-  if (!kids.length) return [`${pad}<div${own} />`];
-  return [`${pad}<div${own}>`, ...kids.flatMap((c) => markup(c, ctx, depth + 1)), `${pad}</div>`];
+  if (!cls && !modes) return kids.flatMap((c) => markup(c, ctx, depth));
+  // A layer without a class that switches a mode still needs an element to carry it; it takes no box.
+  const box = cls ? own : `${modes} style={{ display: 'contents' }}`;
+  if (!kids.length) return [...modeNote, `${pad}<div${box} />`];
+  return [...modeNote, `${pad}<div${box}>`, ...kids.flatMap((c) => markup(c, ctx, depth + 1)), `${pad}</div>`];
+}
+
+/**
+ * Modes a layer switches, from the narrowest frame that has it (mobile first). A mode some widths do not set
+ * (the title in Typography=ExtraSmallScreens on mobile only) is a note for the code step, as width-bound props are.
+ */
+function modesAt(key, ctx, pad) {
+  const byWidth = [...ctx.spec.targets].sort((a, b) => a.size.width - b.size.width).map((t) => ({ t, n: findKey(t.tree, key) })).filter((x) => x.n);
+  const attrs = byWidth.map(({ n }) => modeAttrs(n.modes));
+  const modes = attrs[0] ?? '';
+  if (new Set(attrs).size < 2) return { modes, modeNote: [] };
+  ctx.notes.push(`режим переменных ${key}: ${byWidth.map(({ t }, i) => `${t.id}${attrs[i] || ' по умолчанию'}`).join('; ')}`);
+  return { modes, modeNote: [`${pad}{/* режим меняется с шириной: ${byWidth.map(({ t }, i) => `${t.id}${attrs[i] || ' по умолчанию'}`).join('; ')} — атрибут с самого узкого; шире — значения токенов в @container */}`] };
 }
 
 /** Long text literals of a markup line cut to their start: `{"1. Подписывая…" +6400 симв.}`. */
@@ -258,7 +274,7 @@ export function pageBrief(e, spec, nodeMap) {
     ...(tree ? markup(tree, ctx) : []).map((l) => shortTexts(l)),
     '',
     `Компоненты из ${kindDirs().component}: ${[...ctx.imports.components].join(', ') || 'нет'} — их API не меняй, положение задаёт страница через className.`,
-    ...ctx.notes.map((n) => `⚠ ${n} — в разметке пропсы самого узкого брейкпоинта`),
+    ...ctx.notes.map((n) => `⚠ ${n} — в разметке значение самого узкого брейкпоинта`),
     ...(spec.instances.filter((i) => !i.resolution).length ? [`Не решено (сначала craftui deps ${e.name}): ${spec.instances.filter((i) => !i.resolution).map((i) => i.name.trim()).join(', ')}`] : []),
     `Картинки и графика: ${spec.assets.map((a) => a.file).join(', ') || 'нет'} (копии — в assets/ страницы; alt — по смыслу, декоративные — alt="").`,
     ...(spec.warnings ?? []).map((w) => `⚠ ${w}`),

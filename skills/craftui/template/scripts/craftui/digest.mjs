@@ -204,6 +204,9 @@ function textProp(node, spec, target) {
   return (props.find((p) => p.nodeKey === node.key) ?? props.find((p) => !p.nodeKey && target.props?.[p.react] === node.text?.characters))?.react;
 }
 
+/** data-* attributes of the modes a layer switches (Theme=Dark → data-theme="dark"): tokens.css keys its values by them. */
+export const modeAttrs = (modes) => Object.entries(modes ?? {}).map(([a, v]) => ` ${a}="${v}"`).join('');
+
 export function markupDraft(spec, nodeMap, indent = '      ') {
   const t = defaultTarget(spec);
   // Where each slot sits: bound layers carry `slot`, targets list the layer of every slot they show.
@@ -216,14 +219,17 @@ export function markupDraft(spec, nodeMap, indent = '      ') {
     const cls = node.key === t.tree.key ? null : nodeMap[node.key];
     const pad = `${indent}${'  '.repeat(depth)}`;
     const content = node.text ? `{${textProp(node, spec, t) ?? JSON.stringify(node.text.characters ?? '')}}` : null;
-    if (!cls) {
+    const modes = node.key === t.tree.key ? '' : modeAttrs(node.modes);
+    if (!cls && !modes) {
       if (content && node.key !== t.tree.key) lines.push(`${pad}${content}`);
       for (const c of node.children ?? []) walk(c, depth);
       return;
     }
+    // A layer without a class that switches a mode still needs an element to carry it; it takes no box.
+    const own = cls ? ` className={styles.${cls}}${modes}` : `${modes} style={{ display: 'contents' }}`;
     const kids = node.children ?? [];
-    if (content || !kids.length) return lines.push(`${pad}<span className={styles.${cls}}>${content ?? ''}</span>`);
-    lines.push(`${pad}<span className={styles.${cls}}>`);
+    if (content || !kids.length) return lines.push(`${pad}<span${own}>${content ?? ''}</span>`);
+    lines.push(`${pad}<span${own}>`);
     for (const c of kids) walk(c, depth + 1);
     lines.push(`${pad}</span>`);
   };

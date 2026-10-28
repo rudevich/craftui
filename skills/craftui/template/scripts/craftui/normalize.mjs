@@ -216,13 +216,39 @@ export function buildTokens(raw, ctx) {
       const map = {};
       for (const [prop, value] of Object.entries(t)) {
         const name = `--${ctx.prefix}font-${base}-${prop.replace(/^font-/, '')}`;
-        list.push({ name, figma: `${s.name} (${prop})`, type: 'TYPOGRAPHY', values: { default: value }, defaultMode: 'default', source: 'style' });
+        list.push({ name, figma: `${s.name} (${prop})`, type: 'TYPOGRAPHY', values: { default: value, ...styleModes(s, prop) }, defaultMode: 'default', source: 'style' });
         map[prop] = name;
       }
       byStyle.set(s.id, map);
     }
   }
-  return { list, byVariable, byStyle, figmaCssNames };
+
+  // A text style that binds its size or line height to variables follows their modes (Typography → ExtraSmallScreens):
+  // its token gets a value per mode, in the same [data-typography="…"] blocks as the variables.
+  function styleModes(s, prop) {
+    const field = { 'font-size': 'fontSize', 'line-height': 'lineHeight', 'letter-spacing': 'letterSpacing', 'font-weight': 'fontWeight' }[prop];
+    const v = field && vars.get(s.boundVariables?.[field]?.id);
+    if (!v) return {};
+    const out = {};
+    const base = resolve(v, {});
+    for (const c of collectionsOf(v)) {
+      for (const m of c.modes ?? []) {
+        if (m.modeId === c.defaultModeId) continue;
+        const r = resolve(v, { [colName(c)]: m.name });
+        if (r && base && toCss(r) !== toCss(base)) out[`${slug(colName(c))}=${slug(m.name)}`] = toCss(r);
+      }
+    }
+    return out;
+  }
+
+  // A layer that switches a collection to another mode (a card in Theme=Dark, a title in Typography=ExtraSmallScreens):
+  // the attribute tokens.css keys that mode by. The default mode is :root, it needs none.
+  const modeAttr = (collectionId, modeId) => {
+    const c = cols.get(collectionId);
+    const m = c?.modes?.find((x) => x.modeId === modeId);
+    return c && m && modeId !== c.defaultModeId ? [`data-${slug(colName(c))}`, slug(m.name)] : null;
+  };
+  return { list, byVariable, byStyle, figmaCssNames, modeAttr };
 }
 
 function boxShadow(fx) {
@@ -252,7 +278,7 @@ function fontWeight(style) {
 function lineHeight(lh, size) {
   if (!lh || typeof lh !== 'object') return undefined;
   if (lh.unit === 'PIXELS') return px(lh.value);
-  if (lh.unit === 'PERCENT' && typeof size === 'number') return px((size * lh.value) / 100);
+  if (lh.unit === 'PERCENT' && typeof size === 'number') return px(Math.round((size * lh.value) / 100)); // Figma draws whole pixels
   return undefined;
 }
 function letterSpacing(ls, size) {
@@ -680,6 +706,9 @@ export function normNode(n, key, ctx) {
     if (n.fontName?.family) ctx.fonts.set(`${n.fontName.family}`, { family: n.fontName.family, styles: [...new Set([...(ctx.fonts.get(n.fontName.family)?.styles ?? []), n.fontName.style])] });
   }
   if (n.componentPropertyReferences) node.propRefs = n.componentPropertyReferences;
+  // Modes this layer switches: data-* attributes tokens.css answers ({ 'data-theme': 'dark' }).
+  const modes = Object.entries(n.explicitVariableModes ?? {}).map(([c, m]) => ctx.tokens.modeAttr?.(c, m)).filter(Boolean);
+  if (modes.length) node.modes = Object.fromEntries(modes);
   if (n.image) node.image = true; // filled with a picture: a page renders it as <img>
   if (n.type === 'INSTANCE' && n.instanceOf) {
     node.instance = {
@@ -737,6 +766,8 @@ export function normNode(n, key, ctx) {
     if (node.instance && !inner.instance) inner.via = node.instance.name;
     const opacity = (n.opacity ?? 1) * (flow[0].opacity ?? 1);
     if (opacity < 1) inner.expect = { ...inner.expect, opacity: String(r2(opacity)) };
+    // A mode the wrapper switched (a back button in Theme=Dark) holds for the child; the child's own one wins.
+    if (node.modes) inner.modes = { ...node.modes, ...inner.modes };
     const extra = [...children.filter(isOverlay), ...toggled];
     if (extra.length) {
       const seen = new Map((inner.children ?? []).map((c) => [c.key.slice(key.length + 1), 1]));
