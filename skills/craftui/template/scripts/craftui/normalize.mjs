@@ -632,9 +632,15 @@ function isWrapper(n, child) {
 // Takes no room in the layout: absolute, or a zero-size frame that only holds an overflowing layer (a spinner placeholder).
 const isOverlay = (c) => c.layoutPositioning === 'ABSOLUTE' || (typeof c.width === 'number' && (c.width < 0.5 || c.height < 0.5));
 
+// A layer named by its text (a whole legal paragraph) must not become a key of hundreds of characters.
+const keyOf = (name) => {
+  const s = slug(name);
+  return s.length > 60 ? s.slice(0, 60).replace(/-[^-]*$/, '') : s;
+};
+
 function normChildren(children, key, ctx, seen = new Map()) {
   return children.map((c) => {
-    const base = slug(c.name) || c.type.toLowerCase();
+    const base = keyOf(c.name) || c.type.toLowerCase();
     const i = (seen.get(base) ?? 0) + 1;
     seen.set(base, i);
     return normNode(c, `${key}/${i > 1 ? `${base}-${i}` : base}`, ctx);
@@ -646,6 +652,11 @@ export function normNode(n, key, ctx) {
   if (typeof n.width === 'number') node.box = { x: r2(n.x ?? 0), y: r2(n.y ?? 0), w: r2(n.width), h: r2(n.height) };
   if (n.layoutPositioning === 'ABSOLUTE') node.absolute = true;
   if (n.css) node.css = mapCssVars(n.css, ctx);
+  // Figma lays text lines out on whole pixels: 16px at 140% is 22px there, a browser would give 22.4px.
+  // getCSSAsync writes it as "140% /* 22.4px */"; a token in its place stays.
+  const lh = /^(\d+(?:\.\d+)?)%(\s*\/\*.*\*\/)?$/.exec(node.css?.['line-height'] ?? '')?.[1];
+  const size = /^(\d+(?:\.\d+)?)px$/.exec(n.css?.['font-size'] ?? '')?.[1];
+  if (lh && size) node.css['line-height'] = `${Math.round((size * lh) / 100)}px`;
   const tokens = nodeTokens(n, ctx);
   if (Object.keys(tokens).length) node.tokens = tokens;
   node.expect = expectations(n);
@@ -655,7 +666,9 @@ export function normNode(n, key, ctx) {
     delete node.expect.height;
   }
   if (n.type === 'TEXT') {
-    node.text = { characters: n.characters };
+    // Figma writes Shift+Enter as U+2028 (line separator); browsers do not break lines on it, a line feed does.
+    node.text = { characters: n.characters?.replace(/[\u2028\u2029]/g, '\n') };
+    if (node.text.characters?.includes('\n')) node.css = { ...(node.css ?? {}), 'white-space': 'pre-line' };
     if (n.segments) node.text.segments = n.segments.length;
     if (n.fontName?.family) ctx.fonts.set(`${n.fontName.family}`, { family: n.fontName.family, styles: [...new Set([...(ctx.fonts.get(n.fontName.family)?.styles ?? []), n.fontName.style])] });
   }
@@ -670,6 +683,15 @@ export function normNode(n, key, ctx) {
         ? Object.fromEntries(Object.entries(n.componentProperties).map(([k, v]) => [k.replace(/#[\d:]+$/, ''), v.value]))
         : undefined,
     };
+    // A label typed over a text layer (no TEXT property): the parent passes it to the component as a text prop by layer name.
+    const texts = {};
+    const walk = (c) => {
+      if (c.visible === false) return;
+      if (c.type === 'TEXT' && !(c.name in texts)) texts[c.name] = c.characters?.replace(/[\u2028\u2029]/g, '\n');
+      if (c.type !== 'INSTANCE') c.children?.forEach(walk);
+    };
+    n.children?.forEach(walk);
+    if (Object.keys(texts).length) node.instance.texts = texts;
     const dep = ctx.instances.get(node.instance.key) ?? { key: node.instance.key, name: node.instance.name, nodeIds: [] };
     dep.nodeIds.push(n.id);
     ctx.instances.set(node.instance.key, dep);

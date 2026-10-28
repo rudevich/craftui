@@ -117,7 +117,7 @@ export function writeReadme(e) {
   const deps = (spec.instances ?? []).filter((i) => i.resolution);
   if (deps.length) {
     lines.push('', '## Вложенные части макета', '');
-    const what = (r) => (r === 'inline' ? 'Встроены в компонент' : r === 'content' ? 'Пример содержимого слота в макете' : `Компонент ${r.replace(/^entity:[^/]+\//, '')}`);
+    const what = (r) => (r === 'inline' ? 'Встроены в компонент' : r === 'content' ? 'Пример содержимого слота в макете' : r === 'graphic' ? 'Графика (картинка)' : `Компонент ${r.replace(/^entity:[^/]+\//, '')}`);
     // Sizes repeat the same nested parts under other layer names: one line per outcome.
     const groups = new Map();
     for (const i of deps) groups.set(what(i.resolution), new Set([...(groups.get(what(i.resolution)) ?? []), i.name.trim()]));

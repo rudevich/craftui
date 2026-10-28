@@ -30,6 +30,8 @@ export function describeVisual(name: string, kind = 'components') {
     : [];
 
   test.describe(`${kind}/${name}`, () => {
+    // The browser renders at the reference scale (pages differ from components), compare() checks the same scale.
+    test.use({ deviceScaleFactor: scale });
     if (!ids.length) test('Figma references exist', () => expect(ids, `no PNG in ${shots}`).not.toHaveLength(0));
 
     for (const id of ids) {

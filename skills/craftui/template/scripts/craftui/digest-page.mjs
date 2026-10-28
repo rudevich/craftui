@@ -31,7 +31,7 @@ export function unionTree(targets) {
 // ── CSS draft ─────────────────────────────────────────────────────────────────
 
 // What a page may set on a component it uses: its place in the layout. The component styles itself.
-const PLACEMENT = new Set(['align-self', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'order', 'width', 'max-width', 'min-width', 'margin', 'position', 'top', 'right', 'bottom', 'left', 'z-index', 'grid-column', 'grid-row']);
+const PLACEMENT = new Set(['align-self', 'flex', 'flex-grow', 'flex-shrink', 'flex-basis', 'order', 'width', 'max-width', 'min-width', 'height', 'max-height', 'min-height', 'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'position', 'top', 'right', 'bottom', 'left', 'z-index', 'grid-column', 'grid-row']);
 
 /** Classes of layers that are components (only placement) and pictures (an <img>), from every breakpoint. */
 function layerKinds(targets, nodeMap) {
@@ -136,7 +136,9 @@ export function componentJsx(inst, compName, compSpec, className) {
       else if (v !== false && v !== null && v !== undefined && v !== p.map?.[p.default]) attrs.push(`${p.react}=${JSON.stringify(String(v))}`);
     }
     if (p.role === 'text') {
-      const text = typeof inst.props?.[p.figma] === 'string' ? inst.props[p.figma] : p.default;
+      // A TEXT property, else (a label without one) the text the instance has in that layer.
+      const own = inst.props?.[p.figma] ?? (p.synthetic ? inst.texts?.[p.figma] : undefined);
+      const text = typeof own === 'string' ? own : p.default;
       if (text === undefined) continue;
       if (p.react === 'children') children = text;
       else attrs.push(`${p.react}=${JSON.stringify(String(text))}`);
@@ -159,7 +161,7 @@ export function markup(node, ctx, depth = 0) {
     return [`${pad}<${folder} />`];
   }
   const cls = ctx.nodeMap[node.key] ? localOf(ctx.nodeMap[node.key]) : null;
-  if (node.instance) {
+  if (node.instance && !node.asset) {
     const inst = ctx.spec.instances.find((i) => i.key === node.instance.key);
     const entity = /^entity:component\/(\w+)$/.exec(inst?.resolution ?? '')?.[1];
     if (entity) {
@@ -193,6 +195,10 @@ export function markup(node, ctx, depth = 0) {
   if (!kids.length) return [`${pad}<div${own} />`];
   return [`${pad}<div${own}>`, ...kids.flatMap((c) => markup(c, ctx, depth + 1)), `${pad}</div>`];
 }
+
+/** Long text literals of a markup line cut to their start: `{"1. Подписывая…" +6400 симв.}`. */
+export const shortTexts = (line, max = 100) =>
+  line.replace(/\{"((?:[^"\\]|\\.)*)"\}/g, (m, body) => (body.length > max ? `{"${body.slice(0, max).replace(/\\$/, '')}…" +${body.length - max} симв.}` : m));
 
 export function markupContext(spec, nodeMap, indent) {
   const specs = new Map();
@@ -240,12 +246,13 @@ export function pageBrief(e, spec, nodeMap) {
     `Части (parts/<Имя>/): ${(spec.parts ?? []).map((p) => `${partFolder(e.name, p.name)} ← ${p.key}`).join(', ') || 'нет'}`,
     '',
     'Разметка всех брейкпоинтов вместе (черновик уже в файлах; слой, которого нет на брейкпоинте, скрыт в CSS):',
-    ...(tree ? markup(tree, ctx) : []),
+    // A legal text of thousands of characters is in the draft already; the brief shows where it goes.
+    ...(tree ? markup(tree, ctx) : []).map((l) => shortTexts(l)),
     '',
     `Компоненты из ${kindDirs().component}: ${[...ctx.imports.components].join(', ') || 'нет'} — их API не меняй, положение задаёт страница через className.`,
     ...ctx.notes.map((n) => `⚠ ${n} — в разметке пропсы самого узкого брейкпоинта`),
     ...(spec.instances.filter((i) => !i.resolution).length ? [`Не решено (сначала craftui deps ${e.name}): ${spec.instances.filter((i) => !i.resolution).map((i) => i.name.trim()).join(', ')}`] : []),
-    `Картинки: ${spec.assets.filter((a) => a.format === 'png').map((a) => a.file).join(', ') || 'нет'} (копии — в assets/ страницы; alt — по смыслу, декоративные — alt="").`,
+    `Картинки и графика: ${spec.assets.map((a) => a.file).join(', ') || 'нет'} (копии — в assets/ страницы; alt — по смыслу, декоративные — alt="").`,
     ...(spec.warnings ?? []).map((w) => `⚠ ${w}`),
     '',
     `Дальше: доведи ${e.name}.tsx, части и стили (семантика header / main / section / footer, без фиксированной ширины страницы), затем npm run gen && npm run typecheck && npm run craftui -- verify ${e.name}.`,

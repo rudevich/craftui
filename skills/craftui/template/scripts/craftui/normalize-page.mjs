@@ -5,6 +5,62 @@ import { appendHistory, breakpointOf, breakpointRanges, config, describeBreakpoi
 import { buildTokens, normNode, writeNodeMap } from './normalize.mjs';
 
 const r2 = (v) => Math.round(v * 100) / 100;
+
+/**
+ * A frame without auto-layout (layers placed by x/y, common in product screens) becomes a column in reading order:
+ * children by y, gaps as margin-top, each aligned in the content column (left, right, centre or full width).
+ * The narrowest breakpoint keeps its side padding; on wider ones a column centred in the frame keeps its design width
+ * and never gets closer to the edges than `minSide` (the side padding of the narrowest frame).
+ * Layers overlapping the one above stay absolute.
+ */
+export function flowLayout(node, { minSide, frameWidth }) {
+  const kids = (node.children ?? []).filter((c) => c.box && !c.hidden);
+  if (!kids.length || node.css?.display || node.instance || node.asset || node.text) {
+    node.children?.forEach((c) => flowLayout(c, { frameWidth: c.box?.w ?? frameWidth }));
+    return node;
+  }
+  const W = node.box?.w ?? frameWidth;
+  const left = Math.min(...kids.map((c) => c.box.x));
+  const right = Math.max(...kids.map((c) => c.box.x + c.box.w));
+  const column = r2(right - left);
+  const top = Math.min(...kids.map((c) => c.box.y));
+  const sorted = [...node.children].sort((a, b) => (a.box?.y ?? 0) - (b.box?.y ?? 0));
+  let bottom = top;
+  const near = (a, b) => Math.abs(a - b) <= 2;
+  for (const c of sorted) {
+    if (!c.box || c.hidden) continue;
+    c.css = { ...(c.css ?? {}) };
+    if (c.box.y < bottom - 1) {
+      Object.assign(c.css, { position: 'absolute', left: `${r2(c.box.x)}px`, top: `${r2(c.box.y)}px` });
+      node.css = { ...(node.css ?? {}), position: 'relative' };
+      continue;
+    }
+    const gap = r2(c.box.y - bottom);
+    if (bottom !== top && gap > 0) c.css['margin-top'] = `${gap}px`;
+    const full = c.box.w >= column - 2;
+    const align = full ? 'stretch' : near(c.box.x, left) ? 'flex-start' : near(c.box.x + c.box.w, right) ? 'flex-end' : near(c.box.x + c.box.w / 2, (left + right) / 2) ? 'center' : 'flex-start';
+    c.css['align-self'] = align;
+    if (full) delete c.css.width;
+    bottom = c.box.y + c.box.h;
+    flowLayout(c, { frameWidth: c.box.w });
+  }
+  node.children = sorted;
+  const side = r2(left);
+  const isFrame = node.key === 'root';
+  const centred = minSide != null && near(left, W - right) && side > minSide;
+  const inline = centred ? `max(${minSide}px, calc((100% - ${column}px) / 2))` : `${side}px`;
+  node.css = {
+    ...(node.css ?? {}),
+    display: 'flex',
+    'flex-direction': 'column',
+    'padding-top': `${r2(top)}px`,
+    'padding-right': isFrame ? inline : `${r2(W - right)}px`,
+    'padding-bottom': `${r2(Math.max(0, (node.box?.h ?? bottom) - bottom))}px`,
+    'padding-left': isFrame ? inline : `${side}px`,
+  };
+  delete node.css.height; // the content sets the height of a column
+  return node;
+}
 const kebab = (s) => s.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
 
 export function run(e, { summary, keep }) {
@@ -54,6 +110,15 @@ export function run(e, { summary, keep }) {
     };
   });
   for (const r of breakpointRanges(bp)) if (!targets.some((t) => t.breakpoint === r.name)) warnings.push(`для ${r.name} фрейма в макете нет — сверстай по соседним брейкпоинтам`);
+  // Frames drawn without auto-layout: reading order and alignment instead of x/y (see flowLayout).
+  let minSide;
+  for (const t of targets) {
+    if (t.tree.css?.display) continue;
+    flowLayout(t.tree, { minSide, frameWidth: t.size.width });
+    minSide ??= parseFloat(t.tree.css['padding-left']);
+    t.flow = true;
+  }
+  if (targets.some((t) => t.flow)) warnings.push('фреймы без auto-layout: раскладка переведена в колонку по положению слоёв (порядок по y, выравнивание по колонке) — проверь по verify');
 
   // Pictures: one PNG per picture name, exported from its widest occurrence.
   const images = new Map();
@@ -79,16 +144,20 @@ export function run(e, { summary, keep }) {
     props: [],
     targets,
     tokens: ctx.tokens.list,
+    // A component that is only vector graphics (a logo, an icon) is a picture of the page, not a dependency.
     instances: [...ctx.instances.values()].map((i) => {
       const as = previous?.twins?.[i.name.trim()];
-      return { ...raw.instances.find((r) => r.key === i.key), ...i, resolution: resolutions.get(i.key) ?? (as ? `entity:component/${as}` : null), ...(as ? { as } : {}) };
+      return { ...raw.instances.find((r) => r.key === i.key), ...i, resolution: resolutions.get(i.key) ?? (as ? `entity:component/${as}` : i.graphic ? 'graphic' : null), ...(as ? { as } : {}) };
     }),
     ...(previous?.twins ? { twins: previous.twins } : {}),
     assets: [...ctx.assets.values(), ...[...images.values()].map(({ width, ...a }) => a)],
     fonts: [...ctx.fonts.values()],
     // Parts agreed with the user survive re-normalization; suggestions are the top-level layers of the widest frame.
     parts: (previous?.parts ?? []).filter((p) => targets.some((t) => findKey(t.tree, p.key))),
-    suggestedParts: (widest?.tree.children ?? []).filter((c) => !c.hidden && !c.instance).map((c) => ({ key: c.key, name: pascal(c.name) || 'Part' })),
+    // Parts are containers (a header, a block of cards), never a lone text or picture; names stay short.
+    suggestedParts: (widest?.tree.children ?? [])
+      .filter((c) => !c.hidden && !c.instance && !c.text && !c.picture && !c.asset && (c.children?.length ?? 0) > 0)
+      .map((c) => ({ key: c.key, name: pascal(c.name.split(/\s+/).slice(0, 3).join(' ')).slice(0, 24) || 'Part' })),
     warnings,
     truncated: raw.meta.truncated || undefined,
   };

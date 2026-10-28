@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   appendHistory, breakpointsFrom, config, configProblems, describeBreakpoints, fail, findEntity, getStep, KIND_ALIASES, KINDS, listEntities, newEntity,
-  now, openBlockers, parseFigmaUrl, readJson, replaceSection, resolveSource, saveState, writeJson,
+  now, openBlockers, parseFigmaUrl, readJson, replaceSection, resolveSource, saveState, slug, writeJson,
 } from './lib.mjs';
 import { importsOf, writeReadme } from './readme.mjs';
 import { readFilter, sourceEntry } from './sources.mjs';
@@ -47,6 +47,7 @@ Figma
   scaffold <Name> --add-targets   дописать в <Name>.demo.tsx targets, которых там ещё нет (новые варианты, размеры)
   prop <Name> <свойство Figma> <имя React | -> [тип TS] [--role text|bool|slot|prop --default <v>]
                                правка свойства на шаге confirm (targets переименуются тоже); с --role — новое свойство
+  prop <Name> <свойство Figma> --state <disabled|loading|hover|active>   значение свойства — состояние, а не проп
   part <Page> <слой> <Имя> [--remove]   слой страницы — её внутренняя часть (parts/<Page><Имя>/), шаг confirm
   brief <Name>                 выжимка spec.json для шага code (~4k токенов): data-атрибуты, пропсы, разметка, стили
   spec <Name> [<target>] [<слой>] [--depth N]   точечный просмотр spec.json: без target — список targets,
@@ -302,11 +303,30 @@ const commands = {
     const [ref, figmaName, react, reactType] = positional();
     const e = findEntity(ref);
     const spec = readJson(e.specFile) ?? fail(`нет spec.json — npm run craftui -- normalize ${e.name}`);
-    if (!react) fail('usage: prop <Name> <свойство Figma> <имя React | -> [тип TS] [--role text|bool|slot|prop --default <значение>]');
+    const state = typeof flag('state') === 'string' ? flag('state') : null;
+    if (!react && !state) fail('usage: prop <Name> <свойство Figma> <имя React | -> [тип TS] [--role text|bool|slot|prop --default <значение>] | prop <Name> <свойство Figma> --state <disabled|loading|hover|active…>');
     let p = spec.props.find((x) => x.figma === figmaName);
     // An MCP export does not show TEXT, BOOLEAN and INSTANCE_SWAP properties: they are added by hand with a role.
     if (!p && typeof flag('role') === 'string') spec.props.push((p = { figma: figmaName, role: flag('role'), react: null, ...(flag('default') !== undefined ? { default: flag('default') } : {}) }));
     if (!p) fail(`нет свойства "${figmaName}" (новое — с --role). Есть: ${spec.props.map((x) => x.figma).join(', ')}`);
+    if (state) {
+      // A variant value that is a state (Property 1=Disabled): a flag (native disabled, data-loading) or a pseudo-class, not a prop.
+      const pseudo = ['hover', 'active', 'focus', 'focus-visible'].includes(state);
+      const hit = (p.options ?? Object.keys(p.map ?? {})).find((o) => slug(o) === slug(state));
+      if (!hit) fail(`у "${figmaName}" нет значения ${state} (есть: ${(p.options ?? Object.keys(p.map ?? {})).join(', ')})`);
+      const was = p.react;
+      Object.assign(p, { role: 'state', react: null, reactType: undefined, map: Object.fromEntries((p.options ?? Object.keys(p.map)).map((o) => [o, o === hit ? (pseudo ? { pseudo: state } : { flag: state }) : null])) });
+      for (const t of spec.targets) {
+        const on = (t.variant?.[p.figma] ?? t.props?.[was]) === hit || t.props?.[was] === slug(hit);
+        if (was) delete t.props[was];
+        if (!on) continue;
+        if (pseudo) t.pseudo = [...new Set([...(t.pseudo ?? []), state])];
+        else t.props[state] = true;
+      }
+      writeJson(e.specFile, spec);
+      appendHistory(e, `confirm: ${figmaName}=${hit} → ${pseudo ? `:${state}` : `состояние ${state}`}`);
+      return console.log(`✓ ${figmaName}=${hit} → ${pseudo ? `псевдокласс :${state}` : `флаг ${state}`}. Затем: npm run craftui -- normalize ${e.name} --keep`);
+    }
     const was = p.react;
     p.react = react === '-' ? null : react;
     if (reactType) p.reactType = reactType;

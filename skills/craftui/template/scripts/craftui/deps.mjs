@@ -60,7 +60,7 @@ export async function run(ref, inline, { all = false, same = null } = {}) {
 
   const unresolved = [];
   for (const i of spec.instances) {
-    if (i.resolution === 'inline' || i.resolution === 'content') continue;
+    if (i.resolution === 'inline' || i.resolution === 'content' || i.resolution === 'graphic') continue;
     const match = i.as ? others.find((o) => o.entity.name === i.as) : entityOf(i, others, spec);
     i.resolution = match ? `entity:${match.entity.kind}/${match.entity.name}` : null;
     if (!match) unresolved.push(i);
@@ -72,6 +72,8 @@ export async function run(ref, inline, { all = false, same = null } = {}) {
       ? 'inline (иконка/декор внутри компонента)'
       : i.resolution === 'content'
         ? 'пример содержимого слота (передаёт потребитель)'
+        : i.resolution === 'graphic'
+        ? 'графика (логотип, иконка) — картинка в assets/'
         : i.resolution
         ? `импортирован → ${i.resolution.slice(7)}`
         : `НЕ импортирован${i.graphic ? ' (только векторы — похоже на иконку, можно --inline)' : ''}`;

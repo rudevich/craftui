@@ -360,3 +360,67 @@ describe('page drafts', () => {
     for (const [id] of STEPS.page) expect(instructions(e, { figma: { url: 'u' } }, id).join('\n').length).toBeLessThan(1000);
   });
 });
+
+describe('a real screen: frames without auto-layout, texts, component instances', () => {
+  const ctx = () => ({ prefix: '', tokens: { byVariable: new Map(), byStyle: new Map(), figmaCssNames: new Map() }, assets: new Map(), fonts: new Map(), instances: new Map(), inline: new Set(), resolutions: new Map() });
+  const text = (name, characters, css = {}) => ({ id: name, type: 'TEXT', name, x: 0, y: 0, width: 100, height: 20, visible: true, characters, fills: [], css });
+
+  it('a frame placed by x/y becomes a column: order by y, gaps as margins, alignment in the column, centred on wide frames', async () => {
+    const { flowLayout } = await import('./normalize-page.mjs');
+    const kid = (key, x, y, w, h) => ({ key, box: { x, y, w, h }, css: { width: `${w}px` } });
+    const tree = (W, side) => ({
+      key: 'root',
+      box: { x: 0, y: 0, w: W, h: 600 },
+      css: { width: `${W}px`, height: '600px' },
+      children: [kid('root/button', W - side - 100, 400, 100, 40), kid('root/logo', side, 40, 120, 32), kid('root/title', W / 2 - 100, 150, 200, 30), kid('root/text', side, 220, W - 2 * side, 140)],
+    });
+    const mobile = flowLayout(tree(320, 24), { frameWidth: 320 });
+    expect(mobile.children.map((c) => c.key)).toEqual(['root/logo', 'root/title', 'root/text', 'root/button']);
+    expect(mobile.css).toMatchObject({ display: 'flex', 'flex-direction': 'column', 'padding-top': '40px', 'padding-left': '24px', 'padding-bottom': '160px' });
+    expect(mobile.css.height).toBeUndefined();
+    const [logo, title, body, button] = mobile.children.map((c) => c.css);
+    expect([logo['align-self'], title['align-self'], body['align-self'], button['align-self']]).toEqual(['flex-start', 'center', 'stretch', 'flex-end']);
+    expect([title['margin-top'], body['margin-top'], button['margin-top']]).toEqual(['78px', '40px', '40px']);
+    expect(body.width).toBeUndefined();
+    const desktop = flowLayout(tree(1920, 320), { minSide: 24, frameWidth: 1920 });
+    expect(desktop.css['padding-left']).toBe('max(24px, calc((100% - 1280px) / 2))');
+  });
+
+  it('text lines on whole pixels as Figma draws them, Shift+Enter breaks lines', () => {
+    const node = normNode(text('Body', 'one  two', { 'font-size': '16px', 'line-height': '140% /* 22.4px */' }), 'root', ctx());
+    expect(node.text.characters).toBe('one\n\ntwo');
+    expect(node.css).toMatchObject({ 'line-height': '22px', 'white-space': 'pre-line' });
+    expect(normNode(text('Small', 'a', { 'font-size': '14px', 'line-height': '140%' }), 'root', ctx()).css['line-height']).toBe('20px');
+    expect(normNode(text('Token', 'a', { 'font-size': '14px', 'line-height': 'var(--lh-m)' }), 'root', ctx()).css['line-height']).toBe('var(--lh-m)');
+  });
+
+  it('a layer named by a long text gets a short key', () => {
+    const long = 'Подписывая настоящую Декларацию Заявитель выражает свое согласие на предоставление сведений';
+    const node = normNode({ id: 'f', type: 'FRAME', name: 'Frame', x: 0, y: 0, width: 100, height: 100, children: [text(long, long)] }, 'root', ctx());
+    expect(node.children[0].key.length).toBeLessThanOrEqual('root/'.length + 60);
+  });
+
+  it('the label typed over an instance layer reaches the component as its text prop', async () => {
+    const { componentJsx } = await import('./digest-page.mjs');
+    const inst = { id: 'i', type: 'INSTANCE', name: 'Button', x: 0, y: 0, width: 200, height: 44, instanceOf: { key: 'k', name: 'Button' }, children: [text('Text', 'Подтвердить')] };
+    const node = normNode({ id: 'f', type: 'FRAME', name: 'Frame', x: 0, y: 0, width: 300, height: 100, children: [inst] }, 'root', ctx());
+    const button = node.children[0];
+    expect(button.instance.texts).toEqual({ Text: 'Подтвердить' });
+    const compSpec = { props: [{ figma: 'Text', synthetic: true, role: 'text', react: 'children', default: 'Продолжить' }] };
+    expect(componentJsx(button.instance, 'Button', compSpec, 'submit')).toBe('<Button className={styles.submit}>{"Подтвердить"}</Button>');
+  });
+
+  it('a component on a page keeps its margins and the height the design stretched it to', async () => {
+    const { pageCss } = await import('./digest-page.mjs');
+    const tree = { key: 'root', type: 'FRAME', box: { w: 320, h: 100 }, css: { display: 'flex' }, children: [{ key: 'root/cta', type: 'INSTANCE', box: { w: 100, h: 44 }, css: { height: '44px', 'margin-top': '32px', padding: '12px', background: 'green' }, instance: { key: 'k', name: 'Button' } }] };
+    const spec = { name: 'P', targets: [{ id: 'mobile', breakpoint: 'mobile', size: { width: 320, height: 100 }, frame: { width: 320 }, props: {}, tree }], instances: [{ key: 'k', name: 'Button', resolution: 'entity:component/Button' }], parts: [] };
+    expect(pageCss('P', spec, { root: 'frame', 'root/cta': 'cta' }, { mobile: { max: 767 } }).get('')).toContain('.cta {\n  height: 44px;\n  margin-top: 32px;\n}');
+  });
+
+  it('the page brief shows the start of a long text, the draft keeps it whole', async () => {
+    const { shortTexts } = await import('./digest-page.mjs');
+    const line = `<span className={styles.text}>{"${'а'.repeat(500)}"}</span>`;
+    expect(shortTexts(line)).toBe(`<span className={styles.text}>{"${'а'.repeat(100)}…" +400 симв.}</span>`);
+    expect(shortTexts('<b>{"Подтвердить"}</b>')).toBe('<b>{"Подтвердить"}</b>');
+  });
+});
