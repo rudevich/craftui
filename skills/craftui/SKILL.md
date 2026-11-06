@@ -6,25 +6,25 @@ description: Импорт компонентов из Figma (в т.ч. целы�
 
 # craftui — Figma → React-компоненты
 
-`<skill>` — папка этого файла. Всю детерминированную работу делают команды `npm run craftui -- …` в проекте: они пишут состояние, генерируют черновики кода и печатают следующий шаг. Копия инструкций в проекте: `.craftui/skill/`.
+`<skill>` — папка этого файла. Всю детерминированную работу делают инструменты MCP-сервера craftui: пишут состояние, генерируют черновики кода, печатают следующий шаг. Вызовы записаны как `craftui <инструмент> {json}`. Копия инструкций в проекте: `.craftui/skill/`. Инструментов нет — сервер не подключён: скажи пользователю установить его (плагин или `node install.ts --mcp`) и остановись.
 
 ## Аргументы вызова
 
-- `help`, `помощь`, `?` → кратко перескажи `<skill>/references/help.md` и больше ничего не делай.
-- `<ссылка Figma> [component | page] [через chrome | через figma]` → новый импорт (A). По умолчанию component (`defaultKind` конфига) и chrome (Chrome MCP); page — адаптивная страница (`references/kind-page.md`), figma — Figma MCP.
+- `help`, `помощь`, `?` → кратко перескажи `references/help.md`, больше ничего не делай.
+- `<ссылка Figma> [component | page] [через chrome | через figma]` → новый импорт (A). По умолчанию component (`defaultKind` конфига) и chrome; page — адаптивная страница (`kind-page.md`), figma — Figma MCP.
 - `continue [Name]`, «продолжи» → продолжение (B).
 - `fix <Name> <задача>`, «поправь …» → правки (C).
 - `resync <Name>`, «макет изменился» → ресинк (D).
-- `status` или без аргументов → `npm run craftui -- status`, затем спроси, что делать.
-- Любой другой текст — задача словами: есть ссылка Figma → A; названа сущность → C, а если речь о новом макете — D; «проверь», «почини расхождения» → `craftui verify <Name>` и исправления; иначе `status` и вопрос, что сделать. Всегда сначала план (правило 1).
+- `status` или без аргументов → вызови `status`, затем спроси, что делать.
+- Любой другой текст — задача словами: есть ссылка Figma → A; названа сущность → C или D; «проверь» → `verify {"entity":"<Name>"}` и исправления; иначе `status` и вопрос. Сначала план (правило 1).
 
 ## Правила
 
-1. **План перед действиями.** Сначала только читай (ссылку, `craftui.config.json`, `npm run craftui -- status`). Затем покажи пронумерованный план и спроси «Принять / Отклонить / Правки». Отклонили — ничего не делай и уточни. План существенно поменялся — спроси снова. Принятый план: `npm run craftui -- log <Name> "план: …"`.
-2. **Вопросы** задавай встроенным инструментом вопросов (AskUserQuestion). Если его нет — обычным сообщением, перед этим `npm run craftui -- wait <Name> "<вопрос>"`, после ответа — `craftui resume <Name>`.
-3. **Береги контекст.** Никогда не открывай `craftlog/figma/spec.json` и `craftlog/figma/raw/*`: это сотни килобайт. Данные для кода — `npm run craftui -- brief <Name>`, точечные вопросы — `npm run craftui -- spec <Name> <target> <слой>`. Длинный вывод команд направляй в файл и смотри `tail`. Справочники из `references/` читай, только если карточки шага не хватило, и только нужный раздел.
-4. **Чекпоинты.** Шаг: `craftui begin <Name> <step>` → работа → `craftui done <Name> <step>` (или `craftui fail <Name> <step> "<ошибка>"`). Шаги идемпотентны.
-5. **Потерял нить** (сжатие контекста, рестарт, сбой API) → `npm run craftui -- next`: он печатает текущий шаг. Повтори шаг до 3 раз (`references/recovery.md`).
+1. **План перед действиями.** Сначала только читай (ссылку, `craftui.config.json`, инструмент `status`). Покажи пронумерованный план и спроси «Принять / Отклонить / Правки». Отклонили — ничего не делай и уточни; план существенно поменялся — спроси снова. Принятый план: `log {"entity":"<Name>","action":"note","text":"план: …"}`.
+2. **Вопросы** задавай встроенным инструментом вопросов (AskUserQuestion); нет его — обычным сообщением, перед этим `step {"action":"wait","entity":"<Name>","text":"<вопрос>"}`, после ответа — `step {"action":"resume","entity":"<Name>"}`.
+3. **Береги контекст.** Никогда не открывай `craftlog/figma/spec.json` и `craftlog/figma/raw/*`: это сотни килобайт. Данные для кода — `digest {"action":"brief","entity":"<Name>"}`, точечные вопросы — `digest {"action":"spec","entity":"<Name>","target":"<target>","layer":"<слой>"}`. Длинный вывод — в файл и `tail`. Справочники — по одному, только если карточки шага не хватило.
+4. **Чекпоинты.** Шаг: `step {"action":"begin",…}` → работа → `step {"action":"done",…}` (или `step {"action":"fail",…}` с полем text). Шаги идемпотентны.
+5. **Потерял нить** (сжатие контекста, рестарт, сбой API) → вызови `next`: он печатает текущий шаг. Повтори шаг до 3 раз (`references/recovery.md`).
 6. **Вход в Figma делает только пользователь.** Логины и пароли не вводи. Просят вход или доступ — скажи пользователю и жди.
 7. **Код:** доводи черновики scaffold, а не пиши с нуля. Минимум, что нужно макету, доступность не урезать. Размеры только в `px` и `%`, содержимому слотов размер не задавай.
 8. **Итоговый отчёт** заканчивай 1–2 строками: что не проверено и какие риски.
@@ -32,28 +32,28 @@ description: Импорт компонентов из Figma (в т.ч. целы�
 ## Цикл
 
 ```
-npm run craftui -- next        # шаг, команды, файлы — всё в карточке
-npm run craftui -- begin <Name> <step>
+next                          # карточка шага: вызовы, файлы
+step {"action":"begin","entity":"<Name>","step":"<шаг>"}
 …работа по карточке…
-npm run craftui -- done <Name> <step>
+step {"action":"done","entity":"<Name>","step":"<шаг>"}
 ```
 
-Повторяй до конца: extract → normalize → confirm → screenshots → deps → tokens → scaffold → code → tests → verify → report. На confirm пользователь подтверждает свойства (у страницы — брейкпоинты, части, компоненты). Настройки — `craftui.config.json`.
+Повторяй до конца: extract → normalize → confirm → screenshots → deps → tokens → scaffold → code → tests → verify → report; на confirm пользователь подтверждает свойства (у страницы — брейкпоинты, части, компоненты).
 
 ## Сценарии (подробно — `references/workflows.md`)
 
 - **Вход.** Есть `craftui.config.json` → `status`; нет проекта → предложи `node <skill>/scripts/init-project.ts` и `npm install`.
-- **A. Новый импорт.** `craftui url` → вид и источник → разведка → план и имя → `craftui new [component|page] <Name> "<ссылка>"` → цикл. Странице нужны брейкпоинты конфига: не заданы — спроси пользователя (`kind-page.md`).
+- **A. Новый импорт.** `figma-url` → вид и источник → разведка → план и имя → `create {"kind":"…","name":"<Name>","url":"<ссылка>"}` → цикл. Странице нужны брейкпоинты (`kind-page.md`).
 - **B. Продолжение.** `next` → план оставшихся шагов → цикл.
-- **C. Правки.** Лог и файлы компонента → план → правка → `craftui verify <Name>` → `craftui log`. Отход от макета — в «Отклонения» лога и порог или маска с reason.
-- **D. Ресинк.** `craftui reopen <Name> extract "<причина>"` → extract, normalize `--keep`, screenshots → `scaffold --add-targets` → verify.
+- **C. Правки.** Лог и файлы компонента → план → правка → `verify` → `log {"action":"shortcuts",…}`. Отход от макета — в «Отклонения» и порог или маска с reason.
+- **D. Ресинк.** `step {"action":"reopen","entity":"<Name>","step":"extract","text":"<причина>"}` → extract, normalize `"keep":true`, screenshots, scaffold `"addTargets":true`, verify.
 
 ## Справочники
 
 | Файл | Когда |
 |---|---|
 | `references/workflows.md` | подробности сценариев A–D |
-| `references/help.md` | вызов `help`, вопросы про команды, маленькое окно модели |
+| `references/help.md` | вызов `help`, вопросы про инструменты, маленькое окно модели |
 | `references/figma-chrome.md` / `figma-mcp.md` | трудности на шаге extract |
 | `references/kind-component.md` | API из вариантов, интерактивные компоненты, UI-кит, демо |
 | `references/kind-page.md` | страницы: брейкпоинты, части, компоненты на странице, container queries |

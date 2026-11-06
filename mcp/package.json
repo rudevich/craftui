@@ -1,0 +1,16 @@
+{
+  "name": "craftui-mcp",
+  "version": "0.2.0",
+  "description": "craftui MCP server: Figma → React state, checkpoints and deterministic steps of the craftui skill",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "1.141.0",
+    "@rstest/core": "0.12.4",
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3"
+  }
+}

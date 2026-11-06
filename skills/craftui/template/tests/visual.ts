@@ -1,5 +1,5 @@
 // Screenshot tests: every craftlog/figma/screenshots/<id>.png is compared with the demo target <id>.
-// Results go to craftlog/visual/output/<id>.{json,actual.png,diff.png}; `npm run craftui -- verify` summarizes them.
+// Results go to craftlog/visual/output/<id>.{json,actual.png,diff.png}; the craftui MCP server's verify tool summarizes them.
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, type Locator, test } from '@playwright/test';

@@ -9,7 +9,7 @@
 | `get_variable_defs` | переменные, которые использует узел (токены) |
 | `get_screenshot` | картинка узла для сверки «на глаз» |
 
-Параметры — `fileKey` и `nodeId` из `npm run craftui -- url "<ссылка>"` (nodeId через двоеточие: `2601:7740`). Если сервер не авторизован, скажи пользователю, как подключить его в своём агенте (в Claude Code — `/mcp`), и жди.
+Параметры — `fileKey` и `nodeId` из `craftui figma-url {"url":"<ссылка>"}` (nodeId через двоеточие: `2601:7740`). Если сервер не авторизован, скажи пользователю, как подключить его в своём агенте (в Claude Code — `/mcp`), и жди.
 
 ## Шаг extract: что и куда сохранять
 
@@ -22,15 +22,15 @@
 
 ## normalize
 
-`npm run craftui -- normalize <Name>` строит targets из вариантов в metadata, а `css` и `expect` узлов — из Tailwind-классов design context (по `data-node-id`, best effort). Свойства TEXT, BOOLEAN и INSTANCE_SWAP в metadata не видны: на шаге confirm добавь их по коду design context командой `npm run craftui -- prop <Name> "<свойство Figma>" <имя React> [тип TS] --role text|bool|slot [--default <значение>]` и согласуй с пользователем. `spec.json` руками не открывай: он большой.
+`craftui spec {"action":"normalize","entity":"<Name>"}` строит targets из вариантов в metadata, а `css` и `expect` узлов — из Tailwind-классов design context (по `data-node-id`, best effort). Свойства TEXT, BOOLEAN и INSTANCE_SWAP в metadata не видны: на шаге confirm добавь их по коду design context командой `craftui spec {"action":"prop","entity":"<Name>","figma":"<свойство Figma>","react":"<имя React>","type":"<тип TS>","role":"text|bool|slot","default":"<значение>"}` и согласуй с пользователем. `spec.json` руками не открывай: он большой.
 
 ## Эталоны (шаг screenshots), по порядку
 
 1. В ответах MCP есть ссылки на изображения узлов (локальный сервер отдаёт `http://localhost:3845/assets/…`) → скачай `curl -o craftlog/figma/screenshots/<id>.png`.
-2. В окружении есть `FIGMA_TOKEN` → `npm run craftui -- rest-images <Name>` (один пакетный запрос, масштаб из конфига).
+2. В окружении есть `FIGMA_TOKEN` → `craftui extract {"action":"rest-images","entity":"<Name>"}` (один пакетный запрос, масштаб из конфига).
 3. Есть Chrome → гибрид: эталоны через `snippet export` (`figma-chrome.md`).
-4. Иначе попроси пользователя: выделить варианты → Export → PNG 2x → сохранить как `<id>.png` в `craftlog/figma/screenshots/`. Список id: `npm run craftui -- normalize <Name> --summary`. До этого сверяй «на глаз»: `get_screenshot` против `craftlog/visual/output/<id>.actual.png`.
+4. Иначе попроси пользователя: выделить варианты → Export → PNG 2x → сохранить как `<id>.png` в `craftlog/figma/screenshots/`. Список id: `craftui spec {"action":"normalize","entity":"<Name>","summary":true}`. До этого сверяй «на глаз»: `get_screenshot` против `craftlog/visual/output/<id>.actual.png`.
 
 ## Вложенные компоненты
 
-В metadata инстансы видны как `<instance>`. `craftui deps` сопоставляет их по имени (ключей компонентов MCP не даёт). Ссылку на главный компонент спроси у пользователя или найди через `get_metadata` на странице библиотеки.
+В metadata инстансы видны как `<instance>`. `craftui spec {"action":"deps",…}` сопоставляет их по имени (ключей компонентов MCP не даёт). Ссылку на главный компонент спроси у пользователя или найди через `get_metadata` на странице библиотеки.

@@ -1,6 +1,6 @@
 # Токены (`src/tokens.css`)
 
-`npm run craftui -- tokens <Name>` добавляет в `src/tokens.css` недостающие токены из `spec.json`. Существующие значения он никогда не перезаписывает.
+`craftui build {"action":"tokens","entity":"<Name>"}` добавляет в `src/tokens.css` недостающие токены из `spec.json`. Существующие значения он никогда не перезаписывает.
 
 ## Откуда токены
 

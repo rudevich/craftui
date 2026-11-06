@@ -1,5 +1,5 @@
 {
-  // The craftui tool scripts: Node 24 runs them as they are (type stripping), tsc only checks them.
+  // Project scripts (gen.ts): Node 24 runs them as they are (type stripping), tsc only checks them.
   "compilerOptions": {
     "target": "ES2024",
     "module": "NodeNext",
@@ -15,7 +15,5 @@
     "verbatimModuleSyntax": true,
     "resolveJsonModule": true
   },
-  "include": ["scripts/**/*.ts"],
-  // Snippets run in the Figma page (tsconfig.snippets.json). Test fixtures are partial on purpose: rstest runs them.
-  "exclude": ["scripts/craftui/snippets/**", "scripts/**/*.test.ts"]
+  "include": ["scripts/**/*.ts"]
 }

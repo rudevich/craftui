@@ -1,13 +1,17 @@
 // Regenerates src/index.ts, package.json "exports" and demo/.generated/props.json from the entity folders
-// (craftui.config.json → dirs: src/components, src/pages by default).
+// (craftui.config.json → dirs: src/components, src/pages by default). Self-contained: the craftui tooling
+// lives in the global MCP server, so gen reads only the config and spec shapes it needs here.
+// README.md of entities is written by the MCP server (the readme action of build, verify and the report step).
 import fs from 'node:fs';
 import path from 'node:path';
 import docgen, { type PropItem } from 'react-docgen-typescript';
-import { config, listEntities as importedEntities } from './craftui/lib.ts';
-import { writeReadme } from './craftui/readme.ts';
-import type { Spec, StateRole } from './craftui/types.ts';
 
-const cfg = config();
+// Minimal project settings (the defaults mirror the server's lib.ts): only what gen needs.
+const raw = fs.existsSync('craftui.config.json') ? JSON.parse(fs.readFileSync('craftui.config.json', 'utf8')) : {};
+const cfg = {
+  dirs: { component: 'src/components', page: 'src/pages', ...(raw.dirs ?? {}) },
+  pages: { export: true, ...(raw.pages ?? {}) },
+};
 const COMPONENTS = path.basename(cfg.dirs.component);
 const PAGES = path.basename(cfg.dirs.page);
 const LIBRARY_KINDS = [COMPONENTS];
@@ -63,16 +67,16 @@ if (JSON.stringify(pkg.exports) !== JSON.stringify(exportsMap)) {
 
 // 2. Metadata for demo pages (props table, showcase, playground controls).
 // Own props only, plus props Figma defines even if they are native attributes (disabled on <button>).
-const readSpec = (kind: string, name: string): Spec | null => {
+const readSpec = (kind: string, name: string): SpecLite | null => {
   const file = path.join('src', kind, name, 'craftlog', 'figma', 'spec.json');
   return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
 };
-const roleOf = (r: unknown) => r as StateRole | null | undefined;
-const figmaNames = (spec: Spec | null) =>
+// The part of the server's StateRole gen needs: a state prop maps a value to a flag (disabled, loading…).
+const figmaNames = (spec: SpecLite | null) =>
   new Set(
     (spec?.props ?? []).flatMap((p) => [
       p.react,
-      ...(p.role === 'state' ? Object.values(p.map ?? {}).map((r) => roleOf(r)?.flag) : []),
+      ...(p.role === 'state' ? Object.values(p.map ?? {}).map((r) => (r && typeof r === 'object' && 'flag' in r ? r.flag : undefined)) : []),
     ]).filter((n): n is string => Boolean(n)),
   );
 const allFigmaNames = new Set(DEMO_KINDS.flatMap((kind) => listEntities(kind).flatMap((name) => [...figmaNames(readSpec(kind, name))])));
@@ -137,13 +141,19 @@ for (const kind of DEMO_KINDS) {
           description: p.description ? p.description.split('\n').join(' / ') : isOwn(p) ? undefined : 'нативный атрибут элемента',
           native: isOwn(p) ? undefined : true,
         })),
-      pseudo: [...new Set((spec?.props ?? []).filter((p) => p.role === 'state').flatMap((p) => Object.values(p.map ?? {}).map((r) => roleOf(r)?.pseudo)).filter(Boolean))],
+      pseudo: [...new Set((spec?.props ?? []).filter((p) => p.role === 'state').flatMap((p) => Object.values(p.map ?? {}).map((r) => (r && typeof r === 'object' && 'pseudo' in r ? r.pseudo : undefined))).filter(Boolean))],
     };
   }
 }
 writeIfChanged('demo/.generated/props.json', `${JSON.stringify(props, null, 2)}\n`);
 
-// 3. README.md of imported entities, so the props table follows the code.
-for (const e of importedEntities()) writeReadme(e);
-
 console.log(`gen: ${components.length} component(s) exported, props for ${Object.keys(props).length} entity(ies)`);
+
+// The shapes of spec.json gen reads (the full model is the server's mcp/src/types.ts).
+type SpecLite = {
+  props?: {
+    react?: string | null;
+    role?: string;
+    map?: Record<string, { flag?: string; pseudo?: string } | string | boolean | null>;
+  }[];
+};

@@ -20,6 +20,8 @@ A skill for coding agents that imports Figma components and UI kits into a React
 
 ## Установка
 
+Скилл и MCP-сервер — две части одного репозитория: инструкции для агента (`skills/craftui`) и его рабочий инструмент (`mcp/`). MCP-сервер ставится один раз глобально и работает с проектом в текущей папке; в сами проекты скрипты больше не устанавливаются.
+
 **Claude Code — как плагин из этого репозитория:**
 
 ```
@@ -27,41 +29,48 @@ A skill for coding agents that imports Figma components and UI kits into a React
 /plugin install craftui@craftui
 ```
 
-Обновление: `/plugin marketplace update craftui`.
+Плагин подключает и скилл, и MCP-сервер. Обновление: `/plugin marketplace update craftui`.
 
 **Claude Code / Codex — из клона репозитория:**
 
 ```bash
-git clone https://github.com/rudevich/craftui.git && node craftui/install.ts
+git clone https://github.com/rudevich/craftui.git && node craftui/install.ts --mcp
 ```
 
-`install.ts` ставит симлинк на `skills/craftui` в `~/.claude/skills` и `~/.codex/skills` (если эти папки есть). Флаги: `--claude`, `--codex`, `--target <папка skills>`, `--copy` (копия вместо симлинка). Обновление скилла — `git pull` (при симлинке).
+`install.ts` ставит симлинк на `skills/craftui` в `~/.claude/skills` и `~/.codex/skills` (если эти папки есть), а флаг `--mcp` регистрирует MCP-сервер: для Claude Code — `claude mcp add -s user craftui …`, для Codex — блок в `~/.codex/config.toml`. Флаги: `--claude`, `--codex`, `--target <папка skills>`, `--copy` (копия вместо симлинка), `--mcp`. Обновление скилла и сервера — `git pull` (при симлинке).
 
-**Другие агенты:** скопируйте `skills/craftui` в папку скиллов агента или подключите `SKILL.md` как инструкцию.
+**Другие агенты:** скопируйте `skills/craftui` в папку скиллов агента и зарегистрируйте MCP-сервер вручную: `node <репозиторий>/mcp/server.ts` (stdio).
 
 Если репозиторий приватный, оба способа работают там, где у git есть доступ к аккаунту GitHub (SSH-ключ или `gh auth login`).
 
 ## Требования
 
-- Node.js 24 или новее: скрипты скилла на TypeScript, Node запускает их сам, без сборки
+- Node.js 24 или новее: скилл-скрипты и MCP-сервер на TypeScript, Node запускает их сам, без сборки (нужен и агенту, и клиенту, который поднимает сервер)
 - Figma MCP (удалённый или из Figma Desktop) или браузерный MCP с вашим Chrome (Claude in Chrome / chrome-devtools-mcp)
 
 ## Устройство
 
 ```
-skills/craftui/
+skills/craftui/         пакет 1 — скилл: только инструкции и шаблон проекта
   SKILL.md              сценарий для агента
   references/           справочники по шагам (читаются по необходимости)
   scripts/init-project.ts    разворачивает/обновляет проект библиотеки в рабочей папке
-  scripts/check.ts           проверка кода скилла: npm run check (типы, тесты скриптов)
-  template/             шаблон проекта: rspack (библиотека + демо), rstest, Playwright, CLI craftui
-.claude-plugin/         манифест плагина и маркетплейса Claude Code
-install.ts              установка в ~/.claude/skills и ~/.codex/skills
+  scripts/check.ts           проверка репозитория: npm run check (типы, тесты, smoke)
+  template/             шаблон проекта: rspack (библиотека + демо), rstest, Playwright
+mcp/                    пакет 2 — MCP-сервер: вся детерминированная работа
+  server.ts             stdio-сервер (JSON-RPC, без зависимостей)
+  tools.ts              14 инструментов: status/next/step/log/config, figma-url/create/sources/extract,
+                        spec/digest, build/verify/hooks
+  api.ts                ядро команд над src/
+  src/                  модули: состояние, normalize, токены, заготовки, проверка, автопродолжение
+  hook.ts               вход проектных хуков (Stop, SessionStart)
+.claude-plugin/         манифест плагина и маркетплейса Claude Code (скилл + mcpServers)
+install.ts              установка: скилл в ~/.claude/skills и ~/.codex/skills, --mcp — регистрация сервера
 ```
 
-Вся детерминированная логика (состояние, извлечение, normalize, токены, заготовки, проверка, автопродолжение) живёт в проекте как `scripts/craftui` на TypeScript. Формы данных (`spec.json`, конфиг, state, сырые данные Figma) описаны в `scripts/craftui/types.ts`. Код, который выполняется в странице Figma, лежит в `scripts/craftui/snippets/`: перед отправкой в браузер с него снимаются типы.
+Детерминированная логика (состояние, извлечение, normalize, токены, заготовки, проверка, автопродолжение) живёт в глобальном MCP-сервере: он пишет состояние, генерирует черновики кода и печатает следующий шаг. Формы данных (`spec.json`, конфиг, state, сырые данные Figma) описаны в `mcp/src/types.ts`. Код, который выполняется в странице Figma, лежит в `mcp/src/snippets/`: перед отправкой в браузер с него снимаются типы. Тяжёлые данные идут в файлы через локальный receiver (он встроен в процесс сервера), контекст агента читает только короткие сводки.
 
-После правок скриптов: `npm run check` в корне репозитория (типы скриптов и сниппетов, тесты скриптов). Инструкции копируются в `.craftui/skill/`, так что начатый импорт может продолжить любой агент.
+Инструкции копируются в проект (`.craftui/skill/`), так что начатый импорт может продолжить любой агент. После правок кода сервера: `npm run check` в корне репозитория (типы, тесты, smoke-запуск сервера по stdio).
 
 ## Лицензия
 

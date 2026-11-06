@@ -1,4 +1,4 @@
 /* Shared design tokens from Figma variables and styles.
-   Managed by `npm run craftui -- tokens <Name>` (adds missing ones); values can be edited by hand. */
+   Managed by the craftui MCP server (the build tool, action tokens: adds missing ones); values can be edited by hand. */
 :root {
 }

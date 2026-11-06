@@ -13,13 +13,13 @@
 | текст страницы | `get_page_text`, `read_page` | `take_snapshot` |
 | скриншот | `computer` → screenshot | `take_screenshot` |
 
-`craftui snippet` печатает обе формы: выражение для `javascript_tool` и функцию для `evaluate_script`. Если один инструмент не подключён, используй другой: chrome-devtools-mcp поднимает свой Chrome, в котором пользователь входит в Figma сам. Работай в новой вкладке и не трогай вкладки пользователя.
+`craftui extract` (action snippet) печатает обе формы: выражение для `javascript_tool` и функцию для `evaluate_script`. Если один инструмент не подключён, используй другой: chrome-devtools-mcp поднимает свой Chrome, в котором пользователь входит в Figma сам. Работай в новой вкладке и не трогай вкладки пользователя.
 
 ## 0. Вход и доступ — обязательная проверка
 
 1. Открой ссылку в новой вкладке. Подожди, пока загрузится холст (5–10 с; при таймауте навигации проверь список вкладок — страница обычно уже открыта).
-2. Проба: `npm run craftui -- snippet "<ссылка>" probe` (до `craftui new`) или `snippet <Name> probe`. Выполни код в странице.
-   - `needsLogin: true` → **остановись** и явно напиши пользователю: «В Chrome нужно войти в Figma — вкладка <url>. Войдите и ответьте „готово“». Перед вопросом — `npm run craftui -- wait <Name> "вход в Figma"` (если сущность уже создана).
+2. Проба: `craftui extract {"action":"snippet","url":"<ссылка>","step":"probe"}` (до `craftui new`) или `snippet <Name> probe`. Выполни код в странице.
+   - `needsLogin: true` → **остановись** и явно напиши пользователю: «В Chrome нужно войти в Figma — вкладка <url>. Войдите и ответьте „готово“». Перед вопросом — `craftui step {"action":"wait","entity":"<Name>","text":"вход в Figma"}` (если сущность уже создана).
    - `requestAccess: true` → попроси запросить доступ к файлу или открыть его под нужным аккаунтом.
    - Логин, пароль и коды не вводи никогда.
 
@@ -30,7 +30,7 @@ Figma создаёт `window.figma` **лениво, при первом обра
 - иначе попроси пользователя открыть в этом файле **Plugins → Development → Open console** (или запустить любой плагин) и повтори;
 - файл только для просмотра → предложи сделать копию (Duplicate) или перейди к п. 5.
 
-`receiver: true` значит, что страница достучалась до `http://127.0.0.1:4601`. Если там `blocked: …`: запусти `npm run craftui -- receiver` в фоне. Если Chrome спрашивает про доступ к локальной сети — пусть пользователь разрешит. Если и это не помогло — «Без receiver».
+`receiver: true` значит, что страница достучалась до `http://127.0.0.1:4601`. Если там `blocked: …`: запусти `craftui extract {"action":"receiver"}` в фоне. Если Chrome спрашивает про доступ к локальной сети — пусть пользователь разрешит. Если и это не помогло — «Без receiver».
 
 ## 2. Разведка: что за узел
 
@@ -49,29 +49,29 @@ Figma создаёт `window.figma` **лениво, при первом обра
 **Несколько наборов на один компонент** (по набору на размер, отдельный outline-набор):
 
 ```
-npm run craftui -- new component BasicButton "<ссылка на набор M>" --source chrome --variant "Size=M" --filter filters/m.json
-npm run craftui -- source BasicButton add "<ссылка на набор XL>" --variant "Size=XL" --filter filters/sizes.json
-npm run craftui -- source BasicButton add "<ссылка на outline M>" --variant "Size=M, View=Secondary Outline"
+craftui create {"kind":"component","name":"BasicButton","url":"<ссылка на набор M>","source":"chrome","variant":"Size=M","filter":"filters/m.json"}
+craftui sources {"entity":"BasicButton","action":"add","url":"<ссылка на набор XL>","variant":"Size=XL","filter":"filters/sizes.json"}
+craftui sources {"entity":"BasicButton","action":"add","url":"<ссылка на outline M>","variant":"Size=M, View=Secondary Outline"}
 ```
 
-`--variant` добавляет ось (Size) или переопределяет значение (View=Secondary → Secondary Outline). `craftui source <Name> list` показывает источники.
+Поле `variant` добавляет ось (Size) или переопределяет значение (View=Secondary → Secondary Outline). `craftui sources {"entity":"<Name>"}` показывает источники.
 
 ## 3. Извлечение (шаг extract)
 
-1. Receiver в фоне: `npm run craftui -- receiver` (после обновления скриптов перезапусти его).
-2. `npm run craftui -- snippet <Name> extract` → выполни выведенный однострочник. Код загрузится с receiver, обойдёт все источники с фильтрами и сохранит `craftlog/figma/raw/plugin.json`.
-3. В ответ придёт только сводка: варианты, узлы, переменные, стили, вложенные компоненты. Значения осей сравниваются без учёта регистра (в одном ките бывает `Disclosure=false` и `Disclosure=False`). Если фильтр источника не нашёл ни одного варианта, в сводке будет `warnings` с осями этого набора — поправь фильтр (`craftui source <Name> filter <i> …`).
+1. Receiver в фоне: `craftui extract {"action":"receiver"}` (после обновления скриптов перезапусти его).
+2. `craftui extract {"action":"snippet","entity":"<Name>","step":"extract"}` → выполни выведенный однострочник. Код загрузится с receiver, обойдёт все источники с фильтрами и сохранит `craftlog/figma/raw/plugin.json`.
+3. В ответ придёт только сводка: варианты, узлы, переменные, стили, вложенные компоненты. Значения осей сравниваются без учёта регистра (в одном ките бывает `Disclosure=false` и `Disclosure=False`). Если фильтр источника не нашёл ни одного варианта, в сводке будет `warnings` с осями этого набора — поправь фильтр (`craftui sources {"entity":"<Name>","action":"filter","index":<i>}`).
 4. Наборы из подключённой библиотеки (`remote`) открываются по id так же, как локальные: id набора даёт `getMainComponentAsync()` у его инстанса, ссылку собери как `…?node-id=<id>`. Но **Figma подгружает в файл не всё содержимое библиотечных компонентов**: у части вариантов вложенная ячейка или иконка приходит пустой. normalize пишет об этом `⚠ Figma не подгрузила содержимое…`. Эталоны PNG при этом верные: недостающие стили бери из вариантов, где слой есть, или из инстансов в родительском компоненте.
 5. **Таймаут вызова инструмента** не означает, что работа остановилась: подожди и прочитай в странице `window.__craftui` (`{ step, status, result | error }`).
 
 ## 4. Эталоны и ассеты (шаг screenshots)
 
-После normalize: `npm run craftui -- snippet <Name> export`. Каждый target экспортируется в PNG с `scale` из конфига, векторные ассеты — в SVG: `craftlog/figma/screenshots/<id>.png` и `craftlog/figma/assets/`. Обычно эталон — рамка узла (`useAbsoluteBounds`). Если вариант рисует что-то за рамкой (открытый список под полем, тень, точка обязательности слева), экспорт берёт область отрисовки, а смещение и размер этой области пишет в `screenshots/bounds.json`; сводка перечисляет такие targets в `outsideNode`. Скриншот-тест снимает ту же область.
+После normalize: `craftui extract {"action":"snippet","entity":"<Name>","step":"export"}`. Каждый target экспортируется в PNG с `scale` из конфига, векторные ассеты — в SVG: `craftlog/figma/screenshots/<id>.png` и `craftlog/figma/assets/`. Обычно эталон — рамка узла (`useAbsoluteBounds`). Если вариант рисует что-то за рамкой (открытый список под полем, тень, точка обязательности слева), экспорт берёт область отрисовки, а смещение и размер этой области пишет в `screenshots/bounds.json`; сводка перечисляет такие targets в `outsideNode`. Скриншот-тест снимает ту же область.
 
 ## Без receiver (fetch к 127.0.0.1 заблокирован)
 
-- `npm run craftui -- snippet <Name> extract --inline` печатает код целиком. Замени в нём отправку на receiver возвратом JSON и при большом объёме режь его на куски по 50–100 КБ.
-- `npm run craftui -- put <Name> figma/raw/plugin.json < файл`; PNG — base64 (`figma.base64Encode(bytes)`) и `put … --base64`.
+- `craftui extract {"action":"snippet","entity":"<Name>","step":"extract","inline":true}` печатает код целиком. Замени в нём отправку на receiver возвратом JSON и при большом объёме режь его на куски по 50–100 КБ.
+- `craftui extract {"action":"put","entity":"<Name>","path":"figma/raw/plugin.json","content":"<файл>"}`; PNG — base64 (`figma.base64Encode(bytes)`) и поле `"base64":true`.
 - Это дорого по контексту. Если можно запускать отдельных агентов, отдай эту работу им.
 
 ## 5. Без Plugin API: сетевые запросы и Dev Mode

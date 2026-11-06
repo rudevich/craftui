@@ -1,0 +1,21 @@
+{
+  // The craftui MCP server: Node 24 runs it as it is (type stripping), tsc only checks it.
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2024"],
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": false,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true
+  },
+  "include": ["*.ts", "src/**/*.ts", "tools/**/*.ts"],
+  // Snippets run in the Figma page (tsconfig.snippets.json). Test fixtures are partial on purpose: rstest runs them.
+  "exclude": ["src/snippets/**", "src/**/*.test.ts"]
+}

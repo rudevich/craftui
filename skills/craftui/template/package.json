@@ -16,10 +16,9 @@
     "dev": "node scripts/gen.ts && rspack serve -c rspack.demo.config.mjs",
     "build": "node scripts/gen.ts && rspack build -c rspack.lib.config.mjs && tsc -p tsconfig.build.json",
     "gen": "node scripts/gen.ts",
-    "typecheck": "node scripts/gen.ts && tsc --noEmit && tsc -p tsconfig.scripts.json && tsc -p tsconfig.snippets.json",
+    "typecheck": "node scripts/gen.ts && tsc --noEmit && tsc -p tsconfig.scripts.json",
     "test": "rstest run",
-    "test:visual": "playwright test",
-    "craftui": "node scripts/craftui/cli.ts"
+    "test:visual": "playwright test"
   },
   "peerDependencies": {
     "react": ">=19",

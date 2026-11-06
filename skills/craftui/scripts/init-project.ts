@@ -40,8 +40,10 @@ if (existingPkg && !isCraftuiProject && !merge) {
 
 const TOOL_FILES = [
   'rspack.lib.config.mjs', 'rspack.demo.config.mjs', 'rstest.config.ts', 'rstest.setup.ts', 'playwright.config.ts',
-  'tsconfig.json', 'tsconfig.build.json', 'tsconfig.scripts.json', 'tsconfig.snippets.json', 'src/global.d.ts', 'src/lib/cx.ts',
+  'tsconfig.json', 'tsconfig.build.json', 'tsconfig.scripts.json', 'src/global.d.ts', 'src/lib/cx.ts',
 ];
+// The tool scripts moved to the global MCP server: --update removes them from projects that still have them.
+const REMOVED = ['scripts/craftui', 'tsconfig.snippets.json'];
 const USER_FILES = new Set(['demo/fonts.ts']);
 const toolOwned = (rel: string) => !USER_FILES.has(rel) && (TOOL_FILES.includes(rel) || /^(scripts|tests|demo)\//.test(rel));
 
@@ -88,6 +90,7 @@ for (const rel of walk(templateDir)) {
       pkg.files ??= tpl.files;
       pkg.exports ??= tpl.exports;
       pkg.scripts = { ...pkg.scripts, ...tpl.scripts };
+      delete pkg.scripts.craftui; // the tool moved to the global MCP server
       pkg.peerDependencies = { ...pkg.peerDependencies, ...tpl.peerDependencies };
       pkg.devDependencies = { ...pkg.devDependencies, ...tpl.devDependencies };
       write(dest, `${JSON.stringify(pkg, null, 2)}\n`);
@@ -149,6 +152,35 @@ for (const rel of walk(templateDir)) {
     if (exists && fs.readFileSync(destFile, 'utf8') === content) kept.push(dest);
     else write(dest, content);
   } else kept.push(dest);
+}
+
+// The tool scripts moved to the global MCP server: an updated project should not keep the stale copies.
+for (const rel of REMOVED) {
+  const file = path.join(target, rel);
+  if (fs.existsSync(file)) {
+    fs.rmSync(file, { recursive: true, force: true });
+    notes.push(`${rel} удалён: скрипты craftui теперь в глобальном MCP-сервере (обнови его: плагин или node install.ts --mcp).`);
+  }
+}
+// Hooks written by the old CLI point at the deleted scripts/craftui/cli.ts: drop them, the server's hooks tool adds fresh ones.
+for (const rel of ['.claude/settings.json', '.codex/hooks.json']) {
+  const file = path.join(target, rel);
+  if (!fs.existsSync(file)) continue;
+  const settings = JSON.parse(fs.readFileSync(file, 'utf8')) as { hooks?: Record<string, { hooks?: { command?: string }[] }[]> };
+  let changed = false;
+  for (const groups of Object.values(settings.hooks ?? {})) {
+    for (const g of groups) {
+      const keep = (g.hooks ?? []).filter((h) => !String(h.command ?? '').includes('scripts/craftui/cli.ts'));
+      if (keep.length !== (g.hooks?.length ?? 0)) {
+        g.hooks = keep;
+        changed = true;
+      }
+    }
+  }
+  if (changed) {
+    write(rel, `${JSON.stringify(settings, null, 2)}\n`);
+    notes.push(`${rel}: убраны хуки старого CLI — поставь новые, когда подключён сервер (инструмент hooks, action install).`);
+  }
 }
 
 // The workflow travels with the project, so any agent can resume without the skill installed.

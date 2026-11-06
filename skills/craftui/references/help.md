@@ -26,6 +26,26 @@
 - **chrome** (по умолчанию) — Chrome MCP: ваш Chrome, где выполнен вход в Figma: Claude in Chrome или chrome-devtools-mcp. Данные берутся через Plugin API страницы (иногда нужно один раз открыть Plugins → Development → Open console), запасной путь — сетевые запросы и Dev Mode. Если потребуется войти в Figma, агент попросит об этом явно.
 - **figma** — Figma MCP: официальный сервер (удалённый `mcp.figma.com` или локальный из Figma Desktop). Нужна авторизация сервера в агенте. Старое имя `mcp` тоже принимается.
 
+## Инструменты MCP-сервера
+
+Детерминированную работу делают инструменты MCP-сервера `craftui` (в сессии это `mcp__craftui__<имя>`). Агент вызывает их сам; пользователю достаточно слов.
+
+| Инструмент | Что делает |
+|---|---|
+| `status`, `next` | где мы и что делать дальше (карточка с точными вызовами) |
+| `step` | отметки шагов сущности: begin → done (fail/skip), reopen — заново с шага (ресинк, новые наборы), wait/resume — ожидание ответа пользователя |
+| `log` | строка в «Историю» лога (note), сбор компромиссов `shortcut:` (shortcuts) |
+| `config` | брейкпоинты страниц в конфиге (верхние границы включительно, null — не нужен) |
+| `figma-url` | разобрать ссылку Figma: fileKey, nodeId |
+| `create` | новая сущность: kind component\|page, имя, ссылка, source chrome\|figma, parent (вложенный), variant, filter |
+| `sources` | наборы Figma, из которых собран компонент (размеры, outline), фильтр вариантов |
+| `extract` | данные Figma мимо контекста: receiver (локальный приёмник файлов), snippet (код для страницы Figma: probe/extract/export), put (файл в craftlog без receiver), rest-images (PNG через Figma REST API) |
+| `spec` | spec.json: normalize (собрать из raw; keep — сохранить ручные правки, summary — сводка), deps (вложенные компоненты: inline, inlineAll, same), prop/slot/mockup/part — правки confirm |
+| `digest` | данные для кода: brief — выжимка spec.json (~4k токенов), spec — точечный просмотр слоёв; сам spec.json не открывать |
+| `build` | tokens (токены в src/tokens.css), scaffold (заготовки и черновики кода; addTargets — новые targets в демо), svg (TSX-иконки из ассетов), units (правило единиц: только px и %), readme |
+| `verify` | проверка сущности: единицы, typecheck, rstest, скриншоты, style-check |
+| `hooks` | автопродолжение: install — Stop/SessionStart-хуки в настройки проекта, autopilot — перезапуск после сбоев API |
+
 ## Команды проекта
 
 | Команда | Что делает |
@@ -36,32 +56,6 @@
 | `npm run typecheck` | TypeScript |
 | `npm test` | rstest (unit-тесты из `craftlog/tests/`) |
 | `npm run test:visual` | Playwright: скриншоты против эталонов Figma |
-| `npm run craftui -- help` | все подкоманды craftui |
-
-Главные подкоманды `craftui`:
-
-| Команда | Что делает |
-|---|---|
-| `status`, `next [Name]` | где мы и что делать дальше (с точной командой) |
-| `new component <Name> <url> [--source chrome\|figma] [--variant "Size=M"] [--filter f.json]` | создать сущность (источник по умолчанию — chrome) |
-| `source <Name> list \| add <url> --variant … --filter …` | наборы Figma, из которых собран компонент (размеры, outline), фильтр вариантов |
-| `begin/done/fail/skip <Name> <step>`, `reopen <Name> <step>` | отметки шагов; `reopen` — заново с шага (ресинк, новые наборы) |
-| `wait/resume <Name>`, `log <Name> <текст>` | ожидание ответа пользователя, история |
-| `url`, `receiver`, `snippet`, `put`, `rest-images` | работа с Figma |
-| `normalize [--keep] [--summary]`, `deps [--inline <имя> \| --inline-all \| --same <имя> <Entity>]`, `tokens` | spec.json, вложенные компоненты (встроить, встроить всё, двойник сущности), токены |
-| `slot <Name> <@ключ… \| Ось=Значение> <prop>` | слой (иконка во всех вариантах) или значение оси — содержимое пропа: `slot IconButton @root/content children` |
-| `breakpoints [mobile=<px> tablet=<px\|> desktop=<px\|>]` | брейкпоинты страниц в конфиге (верхние границы включительно, пусто — не нужен) |
-| `part <Page> <слой> <Имя> [--shared] [--remove]` | слой страницы — её внутренняя часть `parts/<Page><Имя>/`; `--shared` — общая для страниц, `src/pages/parts/<Имя>/` |
-| `mockup <Page> <слой> [--remove]` | слой — макет устройства (статус-бар, панель браузера): не верстать |
-| `prop <Name> "<свойство Figma>" <имя React \| -> [тип] [--role …]` | правка или добавление свойства на шаге confirm без открытия spec.json |
-| `scaffold [--force] [--add-targets]`, `svg <Name> <asset> <Icon>` | заготовки и черновики кода (разметка по слоям, стили по вариантам), новые targets в демо, TSX-иконки из ассетов (без пустых clipPath во весь размер) |
-| `brief <Name>`, `spec <Name> [<target>] [<слой>]` | выжимка spec.json для кода (~4k токенов) и точечный просмотр слоёв; сам spec.json не открывать |
-| `verify <Name> [--grep id]`, `shortcuts` | проверка (единицы, typecheck, rstest, скриншоты, style-check), сбор компромиссов |
-| `units [Name]` | правило единиц: только `px` и `%`; `vw`/`vh`/`dvh`… — только оверлеи с `/* units: … */` |
-| `readme [Name]` | README.md в папке компонента (обновляется и сам: при report и `npm run gen`) |
-| `hooks install`, `autopilot` | автопродолжение: не останавливаться на середине, после сжатия контекста вернуть карточку шага, перезапуск после сбоев API |
-
-Полный список: `npm run craftui -- help`.
 
 ## Структура проекта
 
@@ -78,11 +72,13 @@ src/pages/<Page>/         то же для страницы + parts/<Page><Part>
     figma/                всё выкачанное: raw/, spec.json, node-map.json, screenshots/, assets/
     visual/               скриншот-тест, visual.config.json, output/ (actual, diff)
     tests/                rstest
-scripts/craftui/          CLI craftui на TypeScript (Node 24 запускает как есть); types.ts — формы spec.json, state.json, node-map и конфига
+scripts/gen.ts            сборка barrel, exports и метаданных демо из папок сущностей
 src/pages/parts/<Имя>/    общие части страниц (part.json — откуда сделана)
 demo/                     демо-приложение (шрифты макета — demoFonts в конфиге)
-.craftui/              служебное: копия инструкций скилла, логи установки
+.craftui/              служебное: копия инструкций скилла, состояние хуков, логи установки
 ```
+
+Скрипты craftui в проект не устанавливаются: вся работа — в глобальном MCP-сервере; формы данных (`spec.json`, state.json, node-map, конфиг) описаны в его `mcp/src/types.ts`.
 
 ## Конфиг проекта
 
@@ -97,10 +93,10 @@ demo/                     демо-приложение (шрифты макет
 | `verifyIterations` | `5` | сколько итераций verify до вопроса пользователю |
 | `demoFonts` | `[]` | ссылки на CSS шрифтов макета для демо и скриншот-тестов |
 | `scale`, `maxDiffRatio` | `2`, `0.01` | масштаб PNG-эталонов и порог сравнения компонентов |
-| `pages` | — | `breakpoints` (команда `craftui breakpoints`), `scale` (1), `maxDiffRatio` (0.02), `export` (страницы в сборке как `<pkg>/pages/<Page>`) |
+| `pages` | — | `breakpoints` (инструмент `config`), `scale` (1), `maxDiffRatio` (0.02), `export` (страницы в сборке как `<pkg>/pages/<Page>`) |
 | `tokenPrefix`, `port`, `receiverPort`, `autopilot` | | префикс токенов, порт демо, порт receiver, команды автопилота |
 
-`npm run craftui -- status` показывает ошибки конфига.
+Инструмент `status` показывает ошибки конфига.
 
 ## Использование библиотеки
 
@@ -116,23 +112,24 @@ import { Landing } from '<pkg>/pages/Landing'; // страница (pages.export
 
 | Проблема | Решение |
 |---|---|
+| Нет инструментов craftui в сессии | сервер не подключён: плагин craftui или `node install.ts --mcp` из репозитория, затем перезапусти сессию |
 | Figma MCP не авторизован | авторизуйте сервер в агенте (Claude Code: `/mcp`) или выберите chrome |
 | В Chrome просит вход в Figma | войдите сами во вкладке, которую открыл агент, и ответьте «готово» |
 | Chrome спрашивает доступ к локальной сети для figma.com | разрешите: так данные идут на диск напрямую (receiver на 127.0.0.1:4601) |
 | `pluginApi: false` | откройте в файле Plugins → Development → Open console; read-only файл — сделайте копию |
-| Тесты rstest или скрипты не стартуют | Node.js 24 или новее (`node --version`) |
+| Тесты rstest или сервер не стартуют | Node.js 24 или новее (`node --version`) |
 | Скриншот-тест: «target is missing» | id в `<Name>.demo.tsx` должен совпадать с именем эталона |
-| Агент упал на ошибке API | `craftui continue` или `npm run craftui -- autopilot` |
+| Агент упал на ошибке API | `craftui continue` или инструмент `hooks` с action autopilot |
 | Модель долго читает данные Figma и не начинает писать код, контекст постоянно сжимается | маленькое окно модели — см. раздел ниже |
 | Нужно принять отличие от макета | попросите агента: он запишет отклонение и ослабит проверку только для этого состояния |
 
 ## Маленькое окно модели (LiteLLM, vLLM, локальные модели)
 
 Скилл рассчитан и на модели с окном ~64k. Только системный промпт и инструменты Claude Code занимают из них 15–20k. Поэтому:
-- `spec.json` и `figma/raw/*` модель не открывает: в проекте их чтение запрещено (`.claude/settings.json`). Данные для кода дают `craftui brief` и `craftui spec`, свойства правятся через `craftui prop`;
-- карточка `craftui next` самодостаточна, справочники нужны только в трудных местах;
-- scaffold пишет черновик разметки и стилей из макета: модели остаётся довести его по замечаниям `craftui verify`;
-- `npm run craftui -- hooks install` добавляет хук, который после сжатия контекста возвращает модели текущий шаг.
+- `spec.json` и `figma/raw/*` модель не открывает: в проекте их чтение запрещено (`.claude/settings.json`). Данные для кода дают `digest` (brief и spec), свойства правятся через `spec` (action prop);
+- карточка `next` самодостаточна, справочники нужны только в трудных местах;
+- scaffold пишет черновик разметки и стилей из макета: модели остаётся довести его по замечаниям `verify`;
+- `hooks` (action install) добавляет хук, который после сжатия контекста возвращает модели текущий шаг.
 
 Claude Code должен знать настоящее окно модели. Иначе он сжимает контекст слишком поздно, и шлюз отвечает `400 ContextWindowExceededError`. Пример для qwen с окном 64000 токенов, в `env` файла `~/.claude/settings.json`:
 

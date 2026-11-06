@@ -11,11 +11,11 @@
 |---|---|
 | `npm run dev` | демо компонентов на http://localhost:4600 |
 | `npm run build` | сборка библиотеки в `dist/` |
-| `npm run gen` | пересобирает сгенерированные файлы: экспорты, описание пропсов, README компонентов |
+| `npm run gen` | пересобирает сгенерированные файлы: экспорты и описание пропсов для демо |
 | `npm run typecheck` | проверка типов во всём проекте |
-| `npm test` | rstest: поведение компонентов, демо и скриптов |
+| `npm test` | rstest: поведение компонентов и демо |
 | `npm run test:visual` | скриншот-тесты: компоненты против эталонов из Figma |
-| `npm run craftui -- <команда>` | импорт из Figma и проверка (`npm run craftui -- help`) |
+| MCP-инструменты craftui | импорт из Figma и проверка (справка: `.craftui/skill/references/help.md`) |
 
 ### `npm run dev`
 
@@ -41,8 +41,7 @@
 Генерирует из `src/components/*`:
 - `src/index.ts` — экспорт всех компонентов;
 - `exports` в `package.json` — путь `./<Name>` для каждого компонента;
-- `demo/.generated/props.json` — пропсы из `types.ts` (тип, значение по умолчанию, JSDoc) для витрины, песочницы и README;
-- `src/components/<Name>/README.md` импортированных компонентов.
+- `demo/.generated/props.json` — пропсы из `types.ts` (тип, значение по умолчанию, JSDoc) для витрины, песочницы и README.
 
 Сам запускается из `dev`, `build` и `typecheck`. Вручную нужен после добавления или переименования компонента и правки `types.ts`, если демо не запущено. Сгенерированные файлы руками не правят: перезапишутся.
 
@@ -54,8 +53,7 @@
 
 rstest в happy-dom (без браузера):
 - `src/**/craftlog/tests/*.test.tsx` — поведение компонентов: пропсы, состояния, клавиатура, доступность;
-- `demo/**/*.test.tsx` — контролы и JSX песочницы;
-- `scripts/**/*.test.ts` — скрипты импорта.
+- `demo/**/*.test.tsx` — контролы и JSX песочницы.
 
 Один компонент: `npx rstest run src/components/<Name>`.
 
@@ -63,21 +61,21 @@ rstest в happy-dom (без браузера):
 
 Playwright снимает каждый вариант каждого компонента и сравнивает с PNG-эталоном из Figma (`src/components/<Name>/craftlog/figma/screenshots/`). Демо поднимает сам или берёт уже запущенное. Порог и исключения с причинами — `craftlog/visual/visual.config.json`, результаты — `craftlog/visual/output/`: `<id>.actual.png`, `<id>.diff.png` (красное — отличия), `<id>.json`.
 
-Для одного компонента удобнее `npm run craftui -- verify <Name>`: единицы, типы, rstest, скриншоты и сверка стилей с Figma (style-check) одной короткой сводкой.
+Для одного компонента удобнее `craftui verify {"entity":"<Name>"}`: единицы, типы, rstest, скриншоты и сверка стилей с Figma (style-check) одной короткой сводкой.
 
-### `npm run craftui -- <команда>`
+### Инструменты craftui (MCP)
 
-Инструмент импорта из Figma; `--` нужен, чтобы npm передал аргументы дальше. Импорт и правки обычно ведёт агент со скиллом craftui, без скилла — по `.craftui/skill/SKILL.md`. Чаще всего нужны:
+Импорт из Figma ведут инструменты MCP-сервера craftui (агент вызывает их сам). Импорт и правки обычно ведёт агент со скиллом craftui, без скилла — по `.craftui/skill/SKILL.md`. Чаще всего нужны:
 
-| Команда | Что делает |
+| Инструмент | Что делает |
 |---|---|
-| `npm run craftui -- help` | все команды с параметрами |
-| `npm run craftui -- status` | компоненты проекта и шаг, на котором остановился импорт |
-| `npm run craftui -- next [Name]` | следующий шаг импорта с точными командами |
-| `npm run craftui -- verify <Name>` | полная проверка компонента |
-| `npm run craftui -- units [Name]` | правило единиц: размеры только в `px` и `%` |
-| `npm run craftui -- readme [Name]` | пересобрать README компонента |
-| `npm run craftui -- hooks install`, `autopilot` | автопродолжение работы агента после сбоев |
+| `status`, `next` | компоненты проекта и следующий шаг с точными вызовами |
+| `verify {"entity":"<Name>"}` | полная проверка компонента |
+| `build {"action":"units","entity":"<Name>"}` | правило единиц: размеры только в `px` и `%` |
+| `build {"action":"readme"}` | пересобрать README компонента |
+| `hooks {"action":"install"}` / `{"action":"autopilot"}` | автопродолжение работы агента после сбоев |
+
+Справка по всем инструментам: `.craftui/skill/references/help.md`.
 
 ## Использование
 
