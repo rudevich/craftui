@@ -15,7 +15,7 @@ const config = JSON.parse(fs.readFileSync('craftui.config.json', 'utf8'));
 const pagesFolder = (config.dirs?.page ?? 'src/pages').split('/').pop();
 const readJson = (file: string) => (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : undefined);
 
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 const digest = (parts: (string | Buffer)[]) => {
   const h = createHash('sha256');
   for (const p of parts) h.update(p);
@@ -45,13 +45,32 @@ export function describeVisual(name: string, kind = 'components') {
     ? fs.readdirSync(shots).filter((f) => f.endsWith('.png')).map((f) => f.slice(0, -4)).sort()
     : [];
 
-  // Everything the render and the comparison depend on: the entity's code, shared demo/lib/tokens, spec,
-  // node-map, bounds and thresholds — shared across targets, so it is digested once; only the PNG differs per target.
+  // Everything the render and the comparison depend on: the entity's code, the code of the entities it composes
+  // from (a stale nested file must not replay), shared demo/lib/tokens, spec, node-map, bounds and thresholds —
+  // shared across targets, so it is digested once; only the PNG differs per target.
   const entityDir = path.join('src', kind, name);
   const cacheDir = path.join(root, 'visual', 'cache');
   const sharedKey = (() => {
+    const dirs = new Set<string>([entityDir]);
+    // Resolved instances render nested entities: their files belong in the key, recursively.
+    const seen = new Set<string>([name]);
+    for (let scan = [...dirs]; scan.length; ) {
+      const dir = scan.pop()!;
+      const sub = readJson(path.join(dir, "craftlog", "figma", "spec.json")) as { instances?: { resolution?: string }[] } | undefined;
+      for (const i of sub?.instances ?? []) {
+        if (!i.resolution?.startsWith('entity:')) continue;
+        const [depKind, dep] = i.resolution.slice('entity:'.length).split('/');
+        if (!dep || !depKind || seen.has(dep)) continue;
+        seen.add(dep);
+        const depDir = path.join(config.dirs?.[depKind] ?? `src/${depKind}s`, dep);
+        if (fs.existsSync(depDir)) {
+          dirs.add(depDir);
+          scan.push(depDir);
+        }
+      }
+    }
     const files = [
-      ...walkFiles(entityDir).filter((f) => !f.split(path.sep).includes('craftlog')),
+      ...[...dirs].flatMap((d) => walkFiles(d)).filter((f) => !f.split(path.sep).includes('craftlog')),
       ...walkFiles('src/lib'),
       ...walkFiles('demo').filter((f) => !f.includes('.generated')),
       ...['src/tokens.css', 'tests/compare.ts'].filter((f) => fs.existsSync(f)),

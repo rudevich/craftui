@@ -85,6 +85,12 @@ html[data-cu-isolated] body {
 .cu-field select, .cu-field input[type='text'], .cu-field input[type='number'] { font: inherit; padding: 4px 6px; border: 1px solid #d2d2d7; border-radius: 6px; min-width: 0; }
 .cu-field input[type='checkbox'] { justify-self: start; }
 .cu-slot { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cu-events { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid #e3e3e6; padding-top: 10px; }
+.cu-events-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
+.cu-events-head button { font: inherit; font-size: 12px; padding: 2px 8px; border: 1px solid #d2d2d7; border-radius: 6px; background: #fff; cursor: pointer; }
+.cu-events[data-empty] p { margin: 0; color: #8a8a93; font-size: 13px; }
+.cu-events ol { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow: auto; }
+.cu-events code { font-size: 12px; }
 
 @media (max-width: 900px) {
   .cu-layout { grid-template-columns: 1fr; }

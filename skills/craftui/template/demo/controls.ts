@@ -1,5 +1,5 @@
 // Controls and JSX code for the demo showcase and playground, built from the docgen metadata (demo/.generated/props.json).
-import { isValidElement, type ReactNode } from 'react';
+import { Fragment, isValidElement, type ReactNode } from 'react';
 import type { Demo } from './defineDemo';
 import type { PropDoc } from './registry';
 
@@ -35,8 +35,14 @@ export function controlsFor(props: PropDoc[], demo: DemoLike): Control[] {
 export function nodeToJsx(node: unknown): string {
   if (typeof node === 'string') return JSON.stringify(node);
   if (typeof node === 'number' || typeof node === 'boolean') return String(node);
+  if (Array.isArray(node)) return node.map((n) => (isValidElement(n) || typeof n === 'string' ? nodeToJsx(n) : '')).join('');
   if (isValidElement(node)) {
     const type = node.type as string | { displayName?: string; name?: string };
+    if (type === Fragment) {
+      // Фрагмент разворачивается в своих детей: сниппет показывает реальные элементы, а не <Component />.
+      const kids = (node.props as { children?: unknown }).children;
+      return Array.isArray(kids) ? nodeToJsx(kids) : nodeToJsx(kids);
+    }
     return `<${typeof type === 'string' ? type : type.displayName || type.name || 'Component'} />`;
   }
   return '…';
