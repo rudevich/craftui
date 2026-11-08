@@ -18,7 +18,8 @@ function entityOf(i: Instance, others: Other[], spec: Spec): Other | undefined {
   );
 }
 
-export async function run(ref: string | undefined, inline: string | true | undefined, { all = false, same = null as [string | true, string | undefined] | null } = {}) {
+/** Lists nested instances and applies --inline/--same decisions. Returns the number of unresolved instances: 0 means the deps step can close. */
+export async function run(ref: string | undefined, inline: string | true | undefined, { all = false, same = null as [string | true, string | undefined] | null } = {}): Promise<number> {
   const e = findEntity(ref);
   const others = listEntities()
     .filter((x) => x.name !== e.name)
@@ -84,7 +85,11 @@ export async function run(ref: string | undefined, inline: string | true | undef
     console.log(`- ${i.name} ×${i.nodeIds.length}: ${where}`);
   }
   if (!spec.instances.length) console.log('Вложенных компонентов нет.');
-  if (!unresolved.length) return console.log(`\n✓ все вложенные разрешены — craftui step {"action":"done","entity":"${e.name}","step":"deps"}`);
+
+  if (!unresolved.length) {
+    console.log('\n✓ все вложенные разрешены');
+    return 0;
+  }
 
   console.log(`\nИмпортируй их до продолжения, или пометь частью этого компонента: --inline "<имя>", все сразу — --inline-all:`);
   for (const i of unresolved) {
@@ -95,4 +100,5 @@ export async function run(ref: string | undefined, inline: string | true | undef
       : `  ${i.name}: нет id главного компонента — попроси у пользователя ссылку (ПКМ → Go to main component → Copy link)`);
   }
   process.exitCode = 2;
+  return unresolved.length;
 }

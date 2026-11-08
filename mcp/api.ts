@@ -20,12 +20,12 @@ import * as tokensModule from './src/tokens.ts';
 import * as units from './src/units.ts';
 import * as verify from './src/verify.ts';
 import {
-  appendHistory, breakpointsFrom, breakpointsFromArg, config, configProblems, describeBreakpoints, fail, findEntity, getStep, isKind, KIND_ALIASES, KINDS, listEntities, newEntity,
+  applyStep, appendHistory, breakpointsFrom, breakpointsFromArg, config, configProblems, describeBreakpoints, fail, findEntity, getStep, isKind, KIND_ALIASES, KINDS, listEntities, newEntity,
   now, openBlockers, parseFigmaUrl, readJson, replaceSection, resolveSource, saveState, slug, writeJson,
 } from './src/lib.ts';
 import { importsOf, writeReadme } from './src/readme.ts';
 import { readFilter, sourceEntry } from './src/sources.ts';
-import { instructions, STEPS } from './src/steps.ts';
+import { AUTO_CHROME_ONLY, AUTO_STEPS, instructions, STEPS } from './src/steps.ts';
 import type { Breakpoints, Config, Entity, FigmaRef, Kind, Prop, Spec, State, StepStatus } from './src/types.ts';
 
 /** Runs fn with console.log redirected to a buffer; the buffer is the tool result the agent reads. */
@@ -88,7 +88,10 @@ function nextCard(ref?: string) {
   if ((step.attempts ?? 0) >= 3) console.log('Шаг уже падал 3 раза: опиши проблему пользователю и спроси, как быть (или skip).');
   console.log(`Начало: craftui step {"entity":"${e.name}","action":"begin","step":"${step.id}"}`);
   for (const line of instructions(e, s, step.id)) console.log(`  ${line}`);
-  console.log(`Готово: craftui step {"entity":"${e.name}","action":"done","step":"${step.id}"}   Ошибка: action "fail" с полем text`);
+  // Tools and the receiver close auto steps themselves; the manual line only for what the agent must close by hand.
+  const auto = AUTO_STEPS[step.id];
+  if (auto && (s.source === 'chrome' || !AUTO_CHROME_ONLY.includes(step.id))) console.log(`Закроется сам: ${auto}`);
+  else console.log(`Готово: craftui step {"entity":"${e.name}","action":"done","step":"${step.id}"}   Ошибка: action "fail" с полем text`);
   // The two steps after this one, so an agent can chain without calling next between them.
   const idx = s.steps.indexOf(step);
   const upcoming = s.steps.slice(idx + 1).filter((x) => x.status !== 'skipped').slice(0, 2);
@@ -109,11 +112,10 @@ function mark({ entity, status, step: stepId, text }: { entity: string; status: 
     const state = { begin: 'in-progress', done: 'done', fail: 'failed', skip: 'skipped' }[status] as StepStatus;
     const e = findEntity(entity);
     const s = e.state;
-    const step = getStep(s, stepId);
-    if (state === 'in-progress') step.attempts = (step.attempts ?? 0) + 1;
-    step.status = state;
-    step.lastError = state === 'failed' ? text || 'без описания' : null;
-    step.updatedAt = new Date().toISOString();
+    // One mutation path for manual marks, tools and the receiver; a step marked its own status changes nothing.
+    const changed = applyStep(s, stepId, state, text);
+    if (state === 'in-progress') getStep(s, stepId).attempts = (getStep(s, stepId).attempts ?? 0) + 1;
+    if (!changed) return console.log(`✓ ${e.name} · ${stepId}: уже ${state} — ничего не менял.`);
     // A finished report closes an import cycle: version 1 is the first import, every reopen + report adds one.
     const finished = stepId === 'report' && state === 'done';
     if (finished) {
@@ -143,6 +145,14 @@ function mark({ entity, status, step: stepId, text }: { entity: string; status: 
       else console.log('Все шаги выполнены.');
     } else console.log('Дальше: craftui next');
   });
+}
+
+/** Tool-executed steps close themselves on success: the agent skips the manual begin/done pair. Manual step done stays as the fallback. */
+function autoDone(entity: string, stepId: string) {
+  const e = findEntity(entity);
+  const step = e.state.steps.find((x) => x.id === stepId);
+  if (!step || step.status === 'done' || step.status === 'skipped') return;
+  mark({ entity, status: 'done', step: stepId });
 }
 
 /** Resync or extension (new sources, sizes): the step and everything after it run again. */
@@ -321,11 +331,19 @@ export const restImages = (entity: string, fresh = false) => capture(() => rest.
 // ── spec: normalize, deps, confirm-stage edits ───────────────────────────────
 
 export function normalize({ entity, keep = false, summary = false }: { entity: string; keep?: boolean; summary?: boolean }): Promise<string> {
-  return capture(() => normalizeModule.run(entity, { summary, keep }));
+  return capture(async () => {
+    await normalizeModule.run(entity, { summary, keep });
+    // The summary prints the existing spec without building one: the step stays open.
+    if (!summary) autoDone(entity, 'normalize');
+  });
 }
 
 export function entityDeps({ entity, inline, inlineAll = false, same }: { entity: string; inline?: string; inlineAll?: boolean; same?: { instance: string; entity: string } }): Promise<string> {
-  return capture(() => deps.run(entity, inline, { all: inlineAll, same: same ? [same.instance, same.entity] : null }));
+  return capture(async () => {
+    const unresolved = await deps.run(entity, inline, { all: inlineAll, same: same ? [same.instance, same.entity] : null });
+    // Unresolved instances mean decisions are still needed: the step stays open (deps.run returns their count).
+    if (unresolved === 0) autoDone(entity, 'deps');
+  });
 }
 
 export function prop({ entity, figma, react, type, role, default: defaultValue, state }: { entity: string; figma: string; react?: string; type?: string; role?: Prop['role']; default?: string; state?: string }): Promise<string> {
@@ -388,10 +406,19 @@ export const specQuery = ({ entity, target, layer, depth = 3 }: { entity: string
 
 // ── code: tokens, scaffold, svg, units, readme ───────────────────────────────
 
-export const mergeTokens = (entity: string) => capture(() => tokensModule.run(entity));
+export const mergeTokens = (entity: string) =>
+  capture(async () => {
+    const conflicts = await tokensModule.run(entity);
+    // Conflicting values are decided with the user: the step stays open until they are resolved.
+    if (conflicts === 0) autoDone(entity, 'tokens');
+    else console.log('Шаг tokens не закрыт: реши конфликты значений с пользователем (craftui log, история).');
+  });;
 
 export function scaffoldFiles({ entity, force = false, addTargets = false }: { entity: string; force?: boolean; addTargets?: boolean }): Promise<string> {
-  return capture(() => scaffold.run(entity, force, addTargets));
+  return capture(async () => {
+    await scaffold.run(entity, force, addTargets);
+    autoDone(entity, 'scaffold');
+  });
 }
 
 export const svgIcon = ({ entity, asset, name }: { entity: string; asset: string; name?: string }) => capture(() => svg.run([entity, asset, name]));

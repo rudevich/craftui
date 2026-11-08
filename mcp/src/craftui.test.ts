@@ -1,11 +1,17 @@
-import { describe, expect, it } from '@rstest/core';
-import { breakpointsFromArg } from './lib.ts';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { beforeAll, afterAll, describe, expect, it } from '@rstest/core';
+import * as api from '../api.ts';
+import { applyStep, breakpointsFromArg, newEntity, saveState } from './lib.ts';
 import { boolContent, mergeDefinitions, mergeProps, normNode } from './normalize.ts';
 import { bundle } from './snippets.ts';
 import { markSlotContent, suggestSlots } from './slots.ts';
+import { STEPS } from './steps.ts';
 import { toTsx } from './svg.ts';
 import { sameColor } from './tokens.ts';
 import { scanCss, scanTsx } from './units.ts';
+import type { State } from './types.ts';
 
 describe('units', () => {
   it('allows px, %, unitless and angles', () => {
@@ -623,5 +629,98 @@ describe('breakpointsFromArg', () => {
     expect(breakpointsFromArg('')).toBeUndefined();
     expect(breakpointsFromArg(undefined)).toBeUndefined();
     expect(() => breakpointsFromArg('abc')).toThrow();
+  });
+});
+
+describe('applyStep', () => {
+  const state = () => ({ version: 1, steps: [{ id: 'tokens', title: 'Токены', status: 'pending' }] }) as State;
+
+  it('marks a step once; repeating the same status is a no-op', () => {
+    const st = state();
+    expect(applyStep(st, 'tokens', 'done')).toBe(true);
+    expect(applyStep(st, 'tokens', 'done')).toBe(false);
+    expect(st.steps[0].updatedAt).toBeTruthy();
+    expect(applyStep(st, 'tokens', 'failed', 'упс')).toBe(true);
+    expect(st.steps[0].lastError).toBe('упс');
+    // A later done clears the error and stays idempotent.
+    expect(applyStep(st, 'tokens', 'done')).toBe(true);
+    expect(st.steps[0].lastError).toBeNull();
+  });
+});
+
+describe('tool steps close themselves', () => {
+  let root: string;
+  let prev: string;
+  beforeAll(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'craftui-auto-'));
+    fs.writeFileSync(path.join(root, 'craftui.config.json'), '{}\n');
+    prev = process.cwd();
+    process.chdir(root);
+  });
+  afterAll(() => {
+    process.chdir(prev);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const state = (): State => ({
+    version: 1,
+    kind: 'component',
+    name: 'Demo',
+    source: 'chrome',
+    figma: { fileKey: 'KEY', nodeId: '1:2', url: 'https://www.figma.com/design/KEY/?node-id=1-2' },
+    status: 'in-progress',
+    steps: STEPS.component.map(([id, title]) => ({ id, title, status: 'pending' })),
+    createdAt: '2026-11-08T00:00:00Z',
+  });
+  const entity = (specOver: Record<string, unknown> = {}, tokensCss?: string) => {
+    const e = newEntity('component', 'Demo');
+    fs.mkdirSync(path.join(e.craftlog, 'figma'), { recursive: true });
+    saveState(e, state());
+    fs.writeFileSync(e.specFile, JSON.stringify({ tokens: [], props: [], targets: [], instances: [], figma: { fileKey: 'KEY', nodeId: '1:2' }, ...specOver }));
+    if (tokensCss !== undefined) fs.writeFileSync('src/tokens.css', tokensCss);
+    return e;
+  };
+
+  it('build tokens closes the step; a value conflict leaves it open', async () => {
+    const e = entity();
+    await api.mergeTokens('Demo');
+    expect(e.state.steps.find((s) => s.id === 'tokens')!.status).toBe('done');
+
+    const e2 = entity({ tokens: [{ name: '--x', values: { Default: 'red' }, defaultMode: 'Default' }] }, ':root {\n  --x: blue;\n}\n');
+    const out = await api.mergeTokens('Demo');
+    expect(out).toContain('не закрыт');
+    expect(e2.state.steps.find((s) => s.id === 'tokens')!.status).toBe('pending');
+  });
+
+  it('spec deps closes when everything resolves; unresolved instances keep it open', async () => {
+    const e = entity({ instances: [{ key: '1:9', name: 'Icon', nodeIds: ['1:9'], resolution: 'inline' }] });
+    await api.entityDeps({ entity: 'Demo' });
+    expect(e.state.steps.find((s) => s.id === 'deps')!.status).toBe('done');
+
+    const e2 = entity({ instances: [{ key: '1:9', name: 'Icon', nodeIds: ['1:9'], resolution: null }] });
+    const out = await api.entityDeps({ entity: 'Demo' });
+    expect(out).toContain('НЕ импортирован');
+    expect(e2.state.steps.find((s) => s.id === 'deps')!.status).toBe('pending');
+    process.exitCode = undefined; // deps.run signals unresolved via exit code; the server resets it per call
+  });
+
+  it('normalize without raw data fails loudly and the step stays open', async () => {
+    const e = entity();
+    let error: unknown;
+    try {
+      await api.normalize({ entity: 'Demo' });
+    } catch (err) {
+      error = err;
+    }
+    expect(String(error)).toContain('сырых данных');
+    expect(e.state.steps.find((s) => s.id === 'normalize')!.status).toBe('pending');
+  });
+
+  it('manual step done on a done step is a no-op, not a reopen', async () => {
+    const e = entity();
+    await api.mergeTokens('Demo');
+    const out = await api.step({ entity: 'Demo', action: 'done', step: 'tokens' });
+    expect(out).toContain('уже done');
+    expect(e.state.steps.find((s) => s.id === 'tokens')!.status).toBe('done');
   });
 });

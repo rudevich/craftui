@@ -5,7 +5,8 @@ import type { Spec } from './types.ts';
 
 const FILE = 'src/tokens.css';
 
-export function run(ref: string | undefined) {
+/** Merges the spec tokens into src/tokens.css. Returns the number of real value conflicts — they are decided with the user, not silently. */
+export function run(ref: string | undefined): number {
   const e = findEntity(ref);
   const spec = readJson<Spec>(e.specFile) ?? fail(`нет spec.json — craftui spec {"action":"normalize","entity":"${e.name}"}`);
   let css = fs.existsSync(FILE) ? fs.readFileSync(FILE, 'utf8') : ':root {\n}\n';
@@ -41,6 +42,7 @@ export function run(ref: string | undefined) {
   if (added.length > 30) console.log(`  … ещё ${added.length - 30}`);
   for (const n of near) console.log(`  ≈ ${n} — разница не видна глазу (копия библиотеки), оставлено значение tokens.css`);
   for (const c of conflicts) console.log(`  ! ${c} — реши с пользователем, какое значение верное`);
+  return conflicts.length;
 }
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

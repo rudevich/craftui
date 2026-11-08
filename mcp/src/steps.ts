@@ -79,6 +79,18 @@ function pageInstructions(e: Entity, state: State, stepId: string): string[] {
   return map[stepId] ?? [];
 }
 
+// Steps the MCP tools close themselves: normalize/tokens/scaffold/deps on a successful tool call, extract/screenshots when the receiver gets the snippet's files.
+export const AUTO_STEPS: Record<string, string> = {
+  normalize: 'успешный craftui spec {"action":"normalize"} закрывает шаг',
+  tokens: 'успешный craftui build {"action":"tokens"} закрывает шаг (конфликты значений оставляют его открытым)',
+  scaffold: 'успешный craftui build {"action":"scaffold"} закрывает шаг',
+  deps: 'закрывается, когда все вложенные разрешены (spec deps)',
+  extract: 'закрывается, когда сниппет дошлёт сырые данные в receiver',
+  screenshots: 'закрывается, когда export-сниппет дошлёт PNG в receiver',
+};
+// Receiver-based closing works in chrome mode only: in figma-mcp mode the agent saves files by hand and closes these two manually.
+export const AUTO_CHROME_ONLY = ['extract', 'screenshots'];
+
 export function instructions(e: Entity, state: State, stepId: string): string[] {
   if (e.kind === 'page') return pageInstructions(e, state, stepId);
   const n = e.name;

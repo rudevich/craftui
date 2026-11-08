@@ -1,7 +1,7 @@
 // Shared helpers for the craftui CLI: entities, state.json, craftui.log.md.
 import fs from 'node:fs';
 import path from 'node:path';
-import type { BreakpointName, Breakpoints, Config, Entity, Kind, ResolvedRange, State, Step } from './types.ts';
+import type { BreakpointName, Breakpoints, Config, Entity, Kind, ResolvedRange, State, Step, StepStatus } from './types.ts';
 
 export const KINDS: Kind[] = ['component', 'page'];
 export const KIND_ALIASES: Record<string, Kind> = { component: 'component', components: 'component', page: 'page', pages: 'page' };
@@ -283,6 +283,17 @@ export function getStep(state: State, id: string): Step {
   const step = state.steps.find((s) => s.id === id);
   if (!step) return fail(`unknown step "${id}" (steps: ${state.steps.map((s) => s.id).join(', ')})`);
   return step;
+}
+
+
+/** Single mutation of a step's status — tools and the receiver mark through it. Returns false when the step already has this status: auto-marking stays a no-op. */
+export function applyStep(state: State, id: string, status: StepStatus, text?: string): boolean {
+  const step = getStep(state, id);
+  if (step.status === status) return false;
+  step.status = status;
+  step.lastError = status === 'failed' ? text || 'без описания' : null;
+  step.updatedAt = new Date().toISOString();
+  return true;
 }
 
 /** Entities this one waits for that are not done yet. */
