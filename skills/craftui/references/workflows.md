@@ -56,3 +56,12 @@
 5. `verify` покажет, какие состояния разошлись с обновлённым макетом. Обнови код и тесты и запиши итог в лог.
 
 Так же добавляются новые наборы (размеры, outline): `craftui sources {"entity":"<Name>","action":"add",…}` → `reopen`.
+
+## E. Headless-импорт (без агента)
+
+Раннер `node <репозиторий>/mcp/auto.ts --url <ссылка> --name <Name>` проходит create → extract → normalize → screenshots → deps → tokens → scaffold → verify без LLM (Chrome с debugging-портом, см. `figma-chrome.md`, раздел «Headless-режим»). Confirm при этом пропускается, поэтому после headless-импорта агент на шаге code обязан:
+
+1. Проверить имена сущностей: раннер называет их PascalCase-именем набора с запечёнными осями (`SegmentItemHorizontalMRounded`). Переименуй по семантике (`Item`, `SegmentGroup`, …) — папка, файлы, `state.json`, ссылки `entity:component/…` в spec родителей.
+2. Раскрыть контейнеры: списки однотипных инстансов в spec — это `children`/слоты (см. `code-conventions.md`); не оставляй `children?: never` у очевидного контейнера.
+3. Сверить composition с эталонами PNG (`craftlog/figma/screenshots/*.png`): какие айтемы selected (и какой `selectView`), где скролл/обрезка — они различаются по targets.
+4. Однофамильные наборы (один компонент в разных размерах/ориентациях) раннер импортирует как отдельные сущности — при необходимости объедини в одну с осью Size/Orientation через `sources {"action":"add",…}` и `reopen`.

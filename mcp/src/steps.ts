@@ -140,6 +140,9 @@ export function instructions(e: Entity, state: State, stepId: string): string[] 
       '3) Правила: размеры только px и %; цвета, шрифты, радиусы — var(--токен) как в черновике; содержимому слотов размер не задавай;',
       '   пропсы — в types.ts с JSDoc; умолчания — в деструктуризации; <button type="button">; aria-*, клавиатура и :focus-visible обязательны.',
       `4) npm run gen && npm run typecheck. Уточнить слой: craftui digest {"action":"spec","entity":"${n}","target":"<target>","layer":"<слой>"}.`,
+      ...(state.steps?.find((x) => x.id === 'confirm')?.status === 'skipped'
+        ? ['   Confirm был пропущен (headless): проверь имена сущностей по семантике и composition по эталонам PNG (selected/скролл различаются по targets).']
+        : []),
       `Спорные места — ${R}/code-conventions.md; интерактивные компоненты — ${R}/kind-component.md, раздел «Интерактивные компоненты».`,
     ],
     tests: [

@@ -162,7 +162,13 @@ export async function auto(argv: string[]): Promise<string> {
     }
     say(verifyNote);
 
-    return `\n✓ headless-импорт ${e.kind}/${e.name}: черновики, эталоны и spec готовы. Открытые шаги: ${open.join(', ') || '—'}.\nДальше — агент с скиллом craftui: \`next\` → шаг code (доводка по сводке verify выше), tests, report.`;
+    const families = new Set<string>();
+    for (const x of listEntities()) {
+      for (const i of readJson<Spec>(x.specFile)?.instances ?? []) {
+        if (i.resolution?.startsWith('entity:') && i.nodeIds.length >= 3) families.add(i.name.split('/')[0]);
+      }
+    }
+    return `\n✓ headless-импорт ${e.kind}/${e.name}: черновики, эталоны и spec готовы. Открытые шаги: ${open.join(', ') || '—'}.\nЧеклист шага code: имена сущностей (авто-имена запекают оси — переименуй по семантике); контейнеры из однотипных инстансов → children/слоты; composition сверяй с эталонами PNG.${families.size ? `\nОднофамильные наборы (${[...families].join(', ')}) импортированы по отдельности — при нужде объедини в одну сущность с осью Size/Orientation через sources add.` : ''}\nДальше — агент с скиллом craftui: \`next\` → шаг code (доводка по сводке verify выше), tests, report.`;
   } finally {
     await api.receiverStop();
   }
