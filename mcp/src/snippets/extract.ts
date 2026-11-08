@@ -1,6 +1,7 @@
 // Runs in the Figma page (Chrome mode): the component sets of an entity → raw/plugin.json through the receiver.
 import type { Raw, RawSource, RawVariant, SnippetParams, VariantFilter } from '../types.ts';
 import { core } from './lib/core.ts';
+import { pool } from './lib/plugin.ts';
 
 const MAX_VARIANTS = 80;
 
@@ -21,6 +22,7 @@ export default async function run(CU: SnippetParams) {
   const sources: RawSource[] = [];
   const warnings: string[] = [];
   const variants: (RawVariant & { ownVariantProperties: Record<string, string> | null })[] = [];
+  const flat: { v: ComponentNode; index: number }[] = [];
   const list = CU.sources?.length ? CU.sources : [{ nodeId: CU.nodeId ?? '', variant: {} }];
   const nodes = await Promise.all(list.map((s) => figma.getNodeByIdAsync(s.nodeId)));
   // A source over the cap used to throw mid-run, losing the sources serialized before it: count everything first.
@@ -55,12 +57,16 @@ export default async function run(CU: SnippetParams) {
       const axes = Object.entries(defs).filter(([, d]) => d.type === 'VARIANT').map(([k, d]) => `${k}: ${(d.variantOptions ?? []).join('/')}`);
       warnings.push(`источник ${index} «${node.name}»: фильтр не нашёл вариантов (оси: ${axes.join('; ') || '—'}) — craftui sources {"entity":"${CU.name}","action":"filter","index":${index}}`);
     }
-    for (const v of picked) {
-      const own = plain(v.variantProperties ?? null);
-      const added = (info.variant ?? {}) as Record<string, string>;
-      variants.push({ id: v.id, name: v.name, source: index, ownVariantProperties: own, variantProperties: own || Object.keys(added).length ? { ...own, ...added } : null, width: v.width, height: v.height, tree: await ser(v) });
-    }
+    for (const v of picked) flat.push({ v, index });
   }
+  // The cut is fixed before serialization; variants serialize with a bound in flight, the order stays the source order.
+  c.plan(...flat.map((x) => x.v));
+  const rows = await pool(flat, 8, async ({ v, index }) => {
+    const own = plain(v.variantProperties ?? null);
+    const added = (sources[index].variant ?? {}) as Record<string, string>;
+    return { id: v.id, name: v.name, source: index, ownVariantProperties: own, variantProperties: own || Object.keys(added).length ? { ...own, ...added } : null, width: v.width, height: v.height, tree: await ser(v) };
+  });
+  variants.push(...rows);
   const root = sources[0];
 
   const { variables, collections, styles } = await c.variablesAndStyles();

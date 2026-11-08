@@ -15,7 +15,10 @@ export async function core(CU: SnippetParams) {
   const modeCollections = new Set<string>(); // collections whose mode a layer sets (dark theme on a card, typography of a title)
   const instances = new Map<string, Raw['instances'][number]>();
   const images: NonNullable<Raw['images']> = []; // layers filled with a picture: exported as PNG for pages
-  let count = 0;
+  // Truncation is decided by a synchronous pre-order pass (plan) before any serialization: parallel ser() then cannot change the cut.
+  const allowed = new Set<string>();
+  const mainCache = new Map<string, Promise<ComponentNode | null>>();
+  let planned = 0;
   let truncated = false;
 
   const collectAliases = (v: unknown): void => {
@@ -39,11 +42,26 @@ export async function core(CU: SnippetParams) {
     'fillStyleId', 'strokeStyleId', 'effectStyleId', 'textStyleId', 'componentPropertyReferences', 'explicitVariableModes',
   ];
 
+  /** Fixes which nodes serialize (MAX_NODES, DFS pre-order over the roots); ser() then serializes exactly them, in any order. */
+  function plan(...roots: SceneNode[]) {
+    const visit = (n: SceneNode) => {
+      if (planned >= MAX_NODES) {
+        truncated = true;
+        return;
+      }
+      planned++;
+      allowed.add(n.id);
+      if ('children' in n) for (const c of n.children) visit(c);
+    };
+    roots.forEach(visit);
+  }
+
   async function ser(n: SceneNode): Promise<RawNode> {
-    if (++count > MAX_NODES) {
-      truncated = true;
-      return { id: n.id, name: n.name, type: n.type, truncated: true };
-    }
+    // plan() was not run (a caller forgot): fall back to counting here, in call order.
+    if (!planned) {
+      planned++;
+      allowed.add(n.id);
+    } else if (!allowed.has(n.id)) return { id: n.id, name: n.name, type: n.type, truncated: true };
     const o: RawNode = { id: n.id, name: n.name, type: n.type };
     for (const p of PROPS) {
       if (!(p in n)) continue;
@@ -78,74 +96,92 @@ export async function core(CU: SnippetParams) {
       } catch {}
     }
     if (n.type === 'INSTANCE') {
+      // Instances share their main component: fetch it once per main id, together with this node's css.
+      let mainKey = n.id;
       try {
-        const main = await n.getMainComponentAsync();
-        const set = main?.parent?.type === 'COMPONENT_SET' ? main.parent : null;
-        o.instanceOf = main ? { id: main.id, key: main.key, name: main.name, remote: main.remote, set: set && { id: set.id, key: set.key, name: set.name } } : undefined;
-        o.variantProperties = plain(n.variantProperties);
-        o.componentProperties = plain(n.componentProperties) as RawNode['componentProperties'];
-        if (main) {
-          const k = set?.key ?? main.key;
-          const entry = instances.get(k) ?? { key: k, componentKey: main.key, setKey: set?.key ?? null, name: set?.name ?? main.name, mainId: set?.id ?? main.id, remote: main.remote, nodeIds: [] };
-          entry.nodeIds.push(n.id);
-          instances.set(k, entry);
-        }
+        mainKey = (n as InstanceNode).mainComponent?.id ?? n.id;
+      } catch {}
+      const mainP = mainCache.get(mainKey) ?? (n as InstanceNode).getMainComponentAsync().catch(() => null);
+      mainCache.set(mainKey, mainP);
+      const [main, css] = await Promise.all([mainP, n.getCSSAsync().catch(() => undefined)] as const);
+      const set = main?.parent?.type === 'COMPONENT_SET' ? main.parent : null;
+      o.instanceOf = main ? { id: main.id, key: main.key, name: main.name, remote: main.remote, set: set && { id: set.id, key: set.key, name: set.name } } : undefined;
+      o.variantProperties = plain(n.variantProperties);
+      o.componentProperties = plain(n.componentProperties) as RawNode['componentProperties'];
+      if (main) {
+        const k = set?.key ?? main.key;
+        const entry = instances.get(k) ?? { key: k, componentKey: main.key, setKey: set?.key ?? null, name: set?.name ?? main.name, mainId: set?.id ?? main.id, remote: main.remote, nodeIds: [] };
+        entry.nodeIds.push(n.id);
+        instances.set(k, entry);
+      }
+      if (css) o.css = css;
+    } else {
+      try {
+        o.css = await n.getCSSAsync();
       } catch {}
     }
-    try {
-      o.css = await n.getCSSAsync();
-    } catch {}
     if ('children' in n && n.children.length) o.children = await Promise.all(n.children.map(ser));
     return o;
   }
 
   async function variablesAndStyles(): Promise<Pick<Raw, 'variables' | 'collections' | 'styles'>> {
     // Styles first: a text style binds its size and line height to variables (typography modes), they are fetched too.
-    const styles: RawStyle[] = [];
-    for (const id of styleIds) {
-      try {
-        const s = await figma.getStyleByIdAsync(id);
-        if (!s) continue;
-        const o = { id: s.id, key: s.key, name: s.name, type: s.type, remote: s.remote } as RawStyle;
-        if (s.type === 'PAINT') o.paints = plain(s.paints) as RawStyle['paints'];
-        if (s.type === 'EFFECT') o.effects = plain(s.effects) as unknown as RawStyle['effects'];
-        if (s.type === 'TEXT') Object.assign(o, plain({ fontName: s.fontName, fontSize: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, textCase: s.textCase, textDecoration: s.textDecoration, boundVariables: s.boundVariables }));
-        collectAliases(o.boundVariables);
-        styles.push(o);
-      } catch {}
-    }
+    const styles = (await Promise.all(
+      [...styleIds].map(async (id): Promise<RawStyle | null> => {
+        try {
+          const s = await figma.getStyleByIdAsync(id);
+          if (!s) return null;
+          const o = { id: s.id, key: s.key, name: s.name, type: s.type, remote: s.remote } as RawStyle;
+          if (s.type === 'PAINT') o.paints = plain(s.paints) as RawStyle['paints'];
+          if (s.type === 'EFFECT') o.effects = plain(s.effects) as unknown as RawStyle['effects'];
+          if (s.type === 'TEXT') Object.assign(o, plain({ fontName: s.fontName, fontSize: s.fontSize, lineHeight: s.lineHeight, letterSpacing: s.letterSpacing, textCase: s.textCase, textDecoration: s.textDecoration, boundVariables: s.boundVariables }));
+          collectAliases(o.boundVariables);
+          return o;
+        } catch {
+          return null;
+        }
+      }),
+    )).filter((s): s is RawStyle => s !== null);
 
-    // Variables (and their aliases) used anywhere in the tree.
+    // Variables (and their aliases) used anywhere in the tree: the alias graph is followed wave by wave, a wave in parallel.
     const variables: RawVariable[] = [];
     const collections = new Map<string, RawCollection>();
-    const queue = [...variableIds];
-    const seen = new Set<string>();
-    while (queue.length) {
-      const id = queue.shift()!;
-      if (seen.has(id)) continue;
-      seen.add(id);
+    const fetchCollection = async (id: string): Promise<RawCollection> => {
       try {
-        const v = await figma.variables.getVariableByIdAsync(id);
+        const col = await figma.variables.getVariableCollectionByIdAsync(id);
+        return col ? { id: col.id, name: col.name, defaultModeId: col.defaultModeId, modes: plain(col.modes) } : ({ id } as RawCollection);
+      } catch {
+        return { id } as RawCollection;
+      }
+    };
+    const seen = new Set<string>();
+    let queue = [...variableIds];
+    while (queue.length) {
+      const ids = [...new Set(queue)].filter((id) => !seen.has(id));
+      queue = [];
+      if (!ids.length) break;
+      for (const id of ids) seen.add(id);
+      const fetched = await Promise.all(ids.map((id) => figma.variables.getVariableByIdAsync(id).catch(() => null)));
+      const collectionIds = [...new Set(fetched.filter((v): v is Variable => v !== null).map((v) => v.variableCollectionId))].filter((id) => !collections.has(id));
+      const cols = await Promise.all(collectionIds.map(fetchCollection));
+      collectionIds.forEach((id, i) => collections.set(id, cols[i]));
+      const aliases: string[] = [];
+      for (const v of fetched) {
         if (!v) continue;
-        if (!collections.has(v.variableCollectionId)) {
-          const col = await figma.variables.getVariableCollectionByIdAsync(v.variableCollectionId);
-          collections.set(v.variableCollectionId, col ? { id: col.id, name: col.name, defaultModeId: col.defaultModeId, modes: plain(col.modes) } : ({ id: v.variableCollectionId } as RawCollection));
-        }
         const valuesByMode = plain(v.valuesByMode) as Dict;
         collectAliases(valuesByMode);
-        for (const x of Object.values(valuesByMode) as { type?: string; id?: string }[]) if (x?.type === 'VARIABLE_ALIAS' && x.id) queue.push(x.id);
+        for (const x of Object.values(valuesByMode) as { type?: string; id?: string }[]) if (x?.type === 'VARIABLE_ALIAS' && x.id) aliases.push(x.id);
         variables.push({ id: v.id, key: v.key, name: v.name, collectionId: v.variableCollectionId, resolvedType: v.resolvedType, scopes: v.scopes, codeSyntax: v.codeSyntax, remote: v.remote, valuesByMode });
-      } catch {}
+      }
+      queue = aliases;
     }
 
     // Collections a layer switches the mode of: their names and modes give the data-* attribute of that layer.
-    for (const id of modeCollections) {
-      if (collections.has(id)) continue;
-      try {
-        const col = await figma.variables.getVariableCollectionByIdAsync(id);
-        if (col) collections.set(id, { id: col.id, name: col.name, defaultModeId: col.defaultModeId, modes: plain(col.modes) });
-      } catch {}
-    }
+    await Promise.all(
+      [...modeCollections].map(async (id) => {
+        if (!collections.has(id)) collections.set(id, await fetchCollection(id));
+      }),
+    );
     return { variables, collections: [...collections.values()], styles };
   }
 
@@ -159,14 +195,15 @@ export async function core(CU: SnippetParams) {
   return {
     figma,
     plain,
+    plan,
     ser,
     variablesAndStyles,
     saveRaw,
     instances,
     images,
-    /** Layers serialized so far, and whether MAX_NODES cut the tree. */
+    /** Nodes that will serialize (fixed by plan), and whether MAX_NODES cut the tree. */
     get count() {
-      return count;
+      return planned;
     },
     get truncated() {
       return truncated;

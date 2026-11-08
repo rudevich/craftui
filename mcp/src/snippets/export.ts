@@ -1,6 +1,6 @@
 // Runs in the Figma page (Chrome mode): PNG references of the component targets and SVG assets → the receiver.
 import type { SnippetParams } from '../types.ts';
-import { errorText, requireFigma, saver } from './lib/plugin.ts';
+import { errorText, pool, requireFigma, saver } from './lib/plugin.ts';
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
@@ -10,7 +10,8 @@ export default async function run(CU: SnippetParams) {
   const done: string[] = [];
   const failed: string[] = [];
   const bounds: Record<string, { x: number; y: number; w: number; h: number }> = {};
-  for (const t of CU.targets ?? []) {
+  // PNG at scale 2 is memory-heavy: a small bound, per-target failures keep the failed list.
+  await pool(CU.targets ?? [], 4, async (t) => {
     try {
       const node = (await figma.getNodeByIdAsync(t.nodeId)) as SceneNode | null;
       if (!node) throw new Error('not found');
@@ -26,9 +27,9 @@ export default async function run(CU: SnippetParams) {
     } catch (err) {
       failed.push(`${t.id}: ${errorText(err)}`);
     }
-  }
+  });
   await save('screenshots/bounds.json', JSON.stringify(bounds, null, 2));
-  for (const a of CU.assets ?? []) {
+  await pool(CU.assets ?? [], 4, async (a) => {
     try {
       const node = (await figma.getNodeByIdAsync(a.nodeId)) as SceneNode | null;
       if (!node) throw new Error('not found');
@@ -37,7 +38,7 @@ export default async function run(CU: SnippetParams) {
     } catch (err) {
       failed.push(`${a.file}: ${errorText(err)}`);
     }
-  }
+  });
   // Every target exported without failures is the screenshots step complete: the receiver closes it.
   if (!failed.length) await save('screenshots/.done', '', 'screenshots');
   return { saved: done.length, failed, ...(failed.length ? {} : { stepClosed: 'screenshots' }), ...(Object.keys(bounds).length ? { outsideNode: Object.keys(bounds) } : {}) };

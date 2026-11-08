@@ -1,6 +1,7 @@
 // Runs in the Figma page (Chrome mode): the breakpoint frames of a page → raw/plugin.json through the receiver.
 import type { Raw, RawSource, RawVariant, SnippetParams } from '../types.ts';
 import { core } from './lib/core.ts';
+import { pool } from './lib/plugin.ts';
 
 export default async function run(CU: SnippetParams) {
   const c = await core(CU);
@@ -9,7 +10,7 @@ export default async function run(CU: SnippetParams) {
   // Each source is the frame of one breakpoint (mobile, tablet, desktop…), or a group / section with those frames.
   // Instances keep their children here; normalize-page drops them for components imported as entities.
   const sources: RawSource[] = [];
-  const variants: RawVariant[] = [];
+  const framesOf: { f: SceneNode; source: number }[] = [];
   for (const s of CU.sources ?? []) {
     const node = await figma.getNodeByIdAsync(s.nodeId);
     if (!node) throw new Error(`node ${s.nodeId} not found`);
@@ -22,8 +23,11 @@ export default async function run(CU: SnippetParams) {
       : [node as SceneNode];
     if (!frames.length) throw new Error(`${node.name} (${node.type}): внутри нет фреймов`);
     sources.push({ id: node.id, name: node.name, type: node.type, key: (node as ComponentNode).key, width: node.width, height: node.height });
-    for (const f of frames) variants.push({ id: f.id, name: f.name, source: sources.length - 1, width: f.width, height: f.height, tree: await ser(f) });
+    for (const f of frames) framesOf.push({ f, source: sources.length - 1 });
   }
+  // The cut is fixed before serialization; frames serialize with a bound in flight, the order stays the source order.
+  c.plan(...framesOf.map((x) => x.f));
+  const variants: RawVariant[] = await pool(framesOf, 4, async ({ f, source }) => ({ id: f.id, name: f.name, source, width: f.width, height: f.height, tree: await ser(f) }));
 
   const { variables, collections, styles } = await c.variablesAndStyles();
   const data: Raw = {

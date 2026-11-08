@@ -1,6 +1,6 @@
 // Runs in the Figma page (Chrome mode): PNG references of the breakpoint frames, pictures and graphics → the receiver.
 import type { SnippetParams } from '../types.ts';
-import { errorText, requireFigma, saver } from './lib/plugin.ts';
+import { errorText, pool, requireFigma, saver } from './lib/plugin.ts';
 
 export default async function run(CU: SnippetParams) {
   const figma = await requireFigma();
@@ -8,7 +8,7 @@ export default async function run(CU: SnippetParams) {
   const done: string[] = [];
   const failed: string[] = [];
   // One reference per breakpoint frame, at the page scale (pages.scale): a full screen at 2x would be huge.
-  for (const t of CU.targets ?? []) {
+  await pool(CU.targets ?? [], 4, async (t) => {
     try {
       const node = (await figma.getNodeByIdAsync(t.nodeId)) as SceneNode | null;
       if (!node) throw new Error('not found');
@@ -17,10 +17,10 @@ export default async function run(CU: SnippetParams) {
     } catch (err) {
       failed.push(`${t.id}: ${errorText(err)}`);
     }
-  }
+  });
   await save('screenshots/bounds.json', '{}');
   // Pictures as PNG at 2x (sharp on dense screens), vector graphics as SVG.
-  for (const a of CU.assets ?? []) {
+  await pool(CU.assets ?? [], 4, async (a) => {
     try {
       const node = (await figma.getNodeByIdAsync(a.nodeId)) as SceneNode | null;
       if (!node) throw new Error('not found');
@@ -32,7 +32,7 @@ export default async function run(CU: SnippetParams) {
     } catch (err) {
       failed.push(`${a.file}: ${errorText(err)}`);
     }
-  }
+  });
   // Every breakpoint exported without failures is the screenshots step complete: the receiver closes it.
   if (!failed.length) await save('screenshots/.done', '', 'screenshots');
   return { saved: done.length, failed, ...(failed.length ? {} : { stepClosed: 'screenshots' }) };

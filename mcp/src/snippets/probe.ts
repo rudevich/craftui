@@ -1,7 +1,7 @@
 // Runs in the Figma page (Chrome mode): what the link points at, before anything is extracted — login, Plugin API,
 // the node with its variants, frames (breakpoints of a screen) and nested components, the receiver.
 import type { SnippetParams } from '../types.ts';
-import { errorText, figmaApi } from './lib/plugin.ts';
+import { errorText, figmaApi, pool } from './lib/plugin.ts';
 
 type Frame = { id: string; name: string; width: number; height: number; range: string };
 type Probe = {
@@ -77,9 +77,9 @@ export default async function run(CU: SnippetParams) {
               .map((n) => ({ id: n.id, name: n.name, type: n.type, variants: n.type === 'COMPONENT_SET' ? n.children.length : undefined }));
           }
           const nested = new Map<string, { name: string; remote: boolean; count: number }>();
-          for (const i of node.findAll((n) => n.type === 'INSTANCE').slice(0, 300) as InstanceNode[]) {
-            if (i.parent && i.parent.type === 'INSTANCE') continue;
-            const main = await i.getMainComponentAsync();
+          const tops = ((node.findAll((n) => n.type === 'INSTANCE').slice(0, 300) as InstanceNode[]) || []).filter((i) => !(i.parent && i.parent.type === 'INSTANCE'));
+          const mains = await pool(tops, 8, (i) => i.getMainComponentAsync().catch(() => null));
+          for (const main of mains) {
             const set = main?.parent?.type === 'COMPONENT_SET' ? main.parent : null;
             const name = set?.name ?? main?.name;
             if (name) nested.set(name, { name, remote: Boolean(main?.remote), count: (nested.get(name)?.count ?? 0) + 1 });

@@ -24,4 +24,21 @@ export const saver = (CU: SnippetParams) => async (file: string, body: string | 
   if (!res.ok) throw new Error(`receiver: ${res.status} ${await res.text()}`);
 };
 
+
+/** Runs `worker` over items with at most `size` in flight; results keep the item order. In-page the Plugin API shares one
+ *  thread and PNG exports are memory-heavy: a bound beats an unbounded Promise.all. */
+export async function pool<T, R>(items: readonly T[], size: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(size, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        out[i] = await worker(items[i], i);
+      }
+    }),
+  );
+  return out;
+}
+
 export const errorText = (err: unknown) => String((err as Error)?.message ?? err);
