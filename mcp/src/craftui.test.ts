@@ -4,6 +4,7 @@ import path from 'node:path';
 import { beforeAll, afterAll, describe, expect, it } from '@rstest/core';
 import * as api from '../api.ts';
 import * as receiver from './receiver.ts';
+import { childName, parseArgs } from './auto.ts';
 import { applyStep, breakpointsFromArg, newEntity, saveState } from './lib.ts';
 import { boolContent, mergeDefinitions, mergeProps, normNode } from './normalize.ts';
 import { bundle } from './snippets.ts';
@@ -741,5 +742,20 @@ describe('tool steps close themselves', () => {
     } finally {
       await receiver.stop();
     }
+  });
+});
+
+describe('headless runner', () => {
+  it('parses flags and values, defaults for the rest', () => {
+    expect(parseArgs(['--url', 'u', '--name', 'N', '--kind', 'page', '--breakpoints', '767', '--inline-graphic', '--fresh', '--cdp', '9223'])).toMatchObject({
+      url: 'u', name: 'N', kind: 'page', breakpoints: '767', inlineGraphic: true, fresh: true, cdp: '9223',
+    });
+    expect(parseArgs([])).toMatchObject({ kind: 'component', cdp: '9222' });
+  });
+
+  it('names children with a numeric suffix only when the base is taken', () => {
+    expect(childName('Card', new Set())).toBe('Card');
+    expect(childName('Icon', new Set(['Icon']))).toBe('Icon2');
+    expect(childName('Icon', new Set(['Icon', 'Icon2', 'Icon3']))).toBe('Icon4');
   });
 });
