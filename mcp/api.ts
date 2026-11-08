@@ -20,7 +20,7 @@ import * as tokensModule from './src/tokens.ts';
 import * as units from './src/units.ts';
 import * as verify from './src/verify.ts';
 import {
-  appendHistory, breakpointsFrom, config, configProblems, describeBreakpoints, fail, findEntity, getStep, isKind, KIND_ALIASES, KINDS, listEntities, newEntity,
+  appendHistory, breakpointsFrom, breakpointsFromArg, config, configProblems, describeBreakpoints, fail, findEntity, getStep, isKind, KIND_ALIASES, KINDS, listEntities, newEntity,
   now, openBlockers, parseFigmaUrl, readJson, replaceSection, resolveSource, saveState, slug, writeJson,
 } from './src/lib.ts';
 import { importsOf, writeReadme } from './src/readme.ts';
@@ -89,6 +89,10 @@ function nextCard(ref?: string) {
   console.log(`Начало: craftui step {"entity":"${e.name}","action":"begin","step":"${step.id}"}`);
   for (const line of instructions(e, s, step.id)) console.log(`  ${line}`);
   console.log(`Готово: craftui step {"entity":"${e.name}","action":"done","step":"${step.id}"}   Ошибка: action "fail" с полем text`);
+  // The two steps after this one, so an agent can chain without calling next between them.
+  const idx = s.steps.indexOf(step);
+  const upcoming = s.steps.slice(idx + 1).filter((x) => x.status !== 'skipped').slice(0, 2);
+  if (upcoming.length) console.log(`Дальше: ${upcoming.map((x) => `${x.id} — ${x.title}`).join('; ')}`);
 }
 
 export type StepAction = 'begin' | 'done' | 'fail' | 'skip' | 'reopen' | 'wait' | 'resume';
@@ -131,7 +135,13 @@ function mark({ entity, status, step: stepId, text }: { entity: string; status: 
         if (p) appendHistory(p, `вложенный ${e.name} готов`);
       }
     }
-    console.log(`✓ ${e.name} · ${stepId}: ${state}${state === 'done' ? '\nДальше: craftui next' : ''}`);
+    console.log(`✓ ${e.name} · ${stepId}: ${state}`);
+    // The card of the next step right in the done response: the agent chains steps without calling next.
+    if (state === 'done') {
+      const nx = s.steps.find((x) => x.status !== 'done' && x.status !== 'skipped');
+      if (nx) nextCard(`${e.kind}/${e.name}`);
+      else console.log('Все шаги выполнены.');
+    } else console.log('Дальше: craftui next');
   });
 }
 
@@ -239,15 +249,23 @@ export function figmaUrl(url: string): Promise<string> {
   });
 }
 
-export function create({ kind, name, url, source, parent, variant, filter }: { kind?: string; name: string; url: string; source?: string; parent?: string; variant?: string; filter?: string }): Promise<string> {
+export function create({ kind, name, url, source, parent, variant, filter, breakpoints }: { kind?: string; name: string; url: string; source?: string; parent?: string; variant?: string; filter?: string; breakpoints?: string }): Promise<string> {
   return capture(() => {
     // The kind may be left out: defaultKind of the settings (component unless changed).
     const kindArg = kind ?? config().defaultKind;
     const resolvedKind = KIND_ALIASES[kindArg] ?? kindArg;
     if (!isKind(resolvedKind)) fail(`вид должен быть: ${KINDS.join(', ')}`);
+    // A page may bring its breakpoints (from probe's frame widths): they are written to the config if not set yet.
+    const argBreakpoints = breakpointsFromArg(breakpoints);
+    if (resolvedKind === 'page' && argBreakpoints && !config().pages.breakpoints) {
+      const raw = readJson<{ pages?: Partial<Config['pages']>; [key: string]: unknown }>('craftui.config.json', {});
+      raw.pages = { ...raw.pages, breakpoints: argBreakpoints };
+      writeJson('craftui.config.json', raw);
+      console.log(`✓ брейкпоинты страниц из аргумента: ${describeBreakpoints(argBreakpoints)}`);
+    }
     if (resolvedKind === 'page' && !config().pages.breakpoints) {
-      fail('брейкпоинты страниц не заданы. Спроси пользователя: mobile — до скольки px включительно; tablet — до скольки (пусто — не нужен); ' +
-        'desktop — до скольки (пусто — без верхней границы, large desktop не нужен). Затем config {"mobile":767,"tablet":1279,"desktop":null}');
+      fail('брейкпоинты страниц не заданы. Ширины фреймов есть в probe — передай их: create {"kind":"page",…,"breakpoints":"767,1279"} ' +
+        '(mobile, tablet, desktop — верхние границы, пустой сегмент — диапазона нет). Или спроси пользователя и вызови config {"mobile":767,"tablet":1279,"desktop":null}');
     }
     if (!/^[A-Z][A-Za-z0-9]*$/.test(name)) fail('имя — PascalCase латиницей, например BasicButton');
     const figma = parseFigmaUrl(url);
@@ -286,7 +304,7 @@ export function sources(opts: { entity: string; action?: 'list' | 'add' | 'filte
   return capture(() => sourcesModule.run(opts));
 }
 
-export function snippet({ entity, url, step: name, inline = false }: { entity?: string; url?: string; step: 'probe' | 'extract' | 'export'; inline?: boolean }): Promise<string> {
+export function snippet({ entity, url, step: name, inline = false }: { entity?: string; url?: string; step: 'probe' | 'probe-extract' | 'extract' | 'export'; inline?: boolean }): Promise<string> {
   return capture(() => snippets.run([entity ?? url, name], { inline }));
 }
 
@@ -298,7 +316,7 @@ export const receiverStart = ({ port }: { port?: number } = {}) => receiver.star
 
 export const receiverStop = () => receiver.stop();
 
-export const restImages = (entity: string) => capture(() => rest.run(entity));
+export const restImages = (entity: string, fresh = false) => capture(() => rest.run(entity, { fresh }));
 
 // ── spec: normalize, deps, confirm-stage edits ───────────────────────────────
 

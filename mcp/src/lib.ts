@@ -32,6 +32,7 @@ const DEFAULTS: Config = {
   scale: 2,
   maxDiffRatio: 0.01,
   tokenPrefix: '',
+  maxExtractVariants: 80,
   pages: { breakpoints: null, scale: 1, maxDiffRatio: 0.02, export: true },
   port: 4600,
   receiverPort: 4601,
@@ -123,6 +124,13 @@ export function breakpointsFrom({ mobile, tablet, desktop }: { mobile?: Bound; t
 
 /** The range a frame of this width belongs to, or undefined. */
 export const breakpointOf = (width: number, bp: Breakpoints | null | undefined): BreakpointName | undefined => breakpointRanges(bp).find((r) => width >= r.min && width <= r.max)?.name;
+
+/** Breakpoints from a create argument: "767" / "767,1279" / "767,,1500" — the upper bounds, an empty slot = no range. */
+export function breakpointsFromArg(value: string | undefined): Breakpoints | undefined {
+  if (!value || !value.trim()) return undefined;
+  const [m, t, d] = value.split(',').map((s) => s.trim());
+  return breakpointsFrom({ mobile: m, tablet: t, desktop: d });
+}
 
 export const describeBreakpoints = (bp: Breakpoints | null | undefined) =>
   breakpointRanges(bp)

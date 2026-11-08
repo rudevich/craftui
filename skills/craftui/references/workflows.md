@@ -25,9 +25,9 @@
    - Сотни вариантов в наборе → вместе с пользователем выбери приоритетные targets и задай фильтр (`figma-chrome.md`, «Разведка»).
    - Экран (страница приложения) → вид `page` (`kind-page.md`). probe по секции или странице Figma перечисляет фреймы с шириной и диапазоном; предложи по фрейму на брейкпоинт.
    - Вид задаёт пользователь: «страница» / `page` → page, иначе `defaultKind` из `craftui.config.json` (component). Не угадывай по картинке: экран, который пользователь назвал компонентом, импортируется как компонент.
-4. **Для страницы — брейкпоинты.** `craftui config` показывает диапазоны. Не заданы — спроси пользователя AskUserQuestion: mobile до скольки px; tablet до скольки (пусто — нет); desktop до скольки (пусто — без верхней границы, large desktop не нужен). Затем `craftui config {"mobile":…,"tablet":…,"desktop":null}`.
+4. **Для страницы — брейкпоинты.** `craftui config` показывает диапазоны. Не заданы — их можно передать прямо в create: `"breakpoints":"767,1279"` (верхние границы mobile/tablet/desktop, пустой сегмент — диапазона нет; запишутся в config). Ширины фреймов подскажет probe. Если и там неизвестно — спроси пользователя AskUserQuestion: mobile до скольки px; tablet до скольки (пусто — нет); desktop до скольки (пусто — без верхней границы, large desktop не нужен). Затем `craftui config {"mobile":…,"tablet":…,"desktop":null}`.
 5. **План → подтверждение** (правило 1). Отдельно — **имя компонента**: PascalCase из имени в Figma как первый вариант (`Button / Primary` → `Button`, кириллицу транслитерируй или переведи), с проверкой, что такой папки ещё нет.
-6. `craftui create {"kind":"component|page","name":"<Name>","url":"<ссылка>","source":"chrome|figma","variant":"Size=M","filter":"<файл>"}`, затем остальные наборы (у страницы — фреймы брейкпоинтов): `craftui sources {"entity":"<Name>","action":"add",…}`.
+6. `craftui create {"kind":"component|page","name":"<Name>","url":"<ссылка>","source":"chrome|figma","variant":"Size=M","filter":"<файл>","breakpoints":"767,1279"}`, затем остальные наборы (у страницы — фреймы брейкпоинтов): `craftui sources {"entity":"<Name>","action":"add",…}`.
 7. Дальше цикл `next` (см. `SKILL.md`). Шаги страницы — в `kind-page.md`. Шаги компонента:
    - extract → normalize;
    - confirm: свойства и targets подтверждает пользователь, и строки `?` сводки (предложенные слоты) тоже;

@@ -2,6 +2,7 @@
 // (craftui.config.json → dirs: src/components, src/pages by default). Self-contained: the craftui tooling
 // lives in the global MCP server, so gen reads only the config and spec shapes it needs here.
 // README.md of entities is written by the MCP server (the readme action of build, verify and the report step).
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import docgen, { type PropItem } from 'react-docgen-typescript';
@@ -82,6 +83,14 @@ const figmaNames = (spec: SpecLite | null) =>
 const allFigmaNames = new Set(DEMO_KINDS.flatMap((kind) => listEntities(kind).flatMap((name) => [...figmaNames(readSpec(kind, name))])));
 
 const isOwn = (prop: PropItem) => !prop.parent?.fileName.includes('node_modules') && !prop.declarations?.every((d) => d.fileName.includes('node_modules'));
+
+// docgen cache: parsing with react-docgen-typescript is the expensive part, the entity's props only change
+// with its sources, its spec or the set of Figma prop names that survive the filter.
+const CACHE_VERSION = 1;
+const digest = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 16);
+const cacheFile = 'demo/.generated/docgen.cache.json';
+const docgenCache = fs.existsSync(cacheFile) ? (JSON.parse(fs.readFileSync(cacheFile, 'utf8')) as Record<string, { key: string; props: unknown }>) : {};
+const globalKey = digest(`${CACHE_VERSION}|${[...allFigmaNames].sort().join('|')}`);
 const parser = docgen.withCustomConfig('tsconfig.json', {
   savePropValueAsString: true,
   shouldExtractLiteralValuesFromEnum: true,
@@ -116,11 +125,21 @@ const propsNote = (kind: string, name: string) => {
 };
 
 const props: Record<string, unknown> = {};
+let parsed = 0;
+let fromCache = 0;
 for (const kind of DEMO_KINDS) {
   for (const name of listEntities(kind)) {
     const file = path.join('src', kind, name, `${name}.tsx`);
     if (!fs.existsSync(file)) continue;
     const spec = readSpec(kind, name);
+    const typesFile = path.join('src', kind, name, 'types.ts');
+    const id = `${kind}/${name}`;
+    const key = digest([globalKey, fs.readFileSync(file, 'utf8'), fs.existsSync(typesFile) ? fs.readFileSync(typesFile, 'utf8') : '', spec ? JSON.stringify(spec) : ''].join('\n\u0000'));
+    if (docgenCache[id]?.key === key) {
+      props[id] = docgenCache[id].props;
+      fromCache++;
+      continue;
+    }
     const fromFigma = figmaNames(spec);
     const docs = parser.parse(file);
     const doc = docs.find((d) => d.displayName === name) ?? docs[0];
@@ -143,11 +162,14 @@ for (const kind of DEMO_KINDS) {
         })),
       pseudo: [...new Set((spec?.props ?? []).filter((p) => p.role === 'state').flatMap((p) => Object.values(p.map ?? {}).map((r) => (r && typeof r === 'object' && 'pseudo' in r ? r.pseudo : undefined))).filter(Boolean))],
     };
+    docgenCache[id] = { key, props: props[id] };
+    parsed++;
   }
 }
 writeIfChanged('demo/.generated/props.json', `${JSON.stringify(props, null, 2)}\n`);
+writeIfChanged(cacheFile, `${JSON.stringify(docgenCache, null, 2)}\n`);
 
-console.log(`gen: ${components.length} component(s) exported, props for ${Object.keys(props).length} entity(ies)`);
+console.log(`gen: ${components.length} component(s) exported, props for ${Object.keys(props).length} entity(ies) (docgen: ${parsed} разобрано, ${fromCache} из кэша)`);
 
 // The shapes of spec.json gen reads (the full model is the server's mcp/src/types.ts).
 type SpecLite = {

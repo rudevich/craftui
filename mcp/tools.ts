@@ -73,7 +73,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: 'create',
-    description: 'Новая сущность из ссылки Figma (папка, craftlog, state.json, лог). kind по умолчанию — component; page — адаптивная страница (нужны брейкпоинты config, только chrome). source: chrome — Chrome MCP (по умолчанию), figma — Figma MCP. parent — вложенный компонент (родитель ждёт его завершения). variant — "Ось=Значение", filter — JSON-массив условий или файл.',
+    description: 'Новая сущность из ссылки Figma (папка, craftlog, state.json, лог). kind по умолчанию — component; page — адаптивная страница (только chrome; брейкпоинты — breakpoints или config). source: chrome — Chrome MCP (по умолчанию), figma — Figma MCP. parent — вложенный компонент (родитель ждёт его завершения). variant — "Ось=Значение", filter — JSON-массив условий или файл.',
     inputSchema: obj({
       kind: enum_(['component', 'page'], ''),
       name: str('PascalCase латиницей, например BasicButton'),
@@ -82,9 +82,10 @@ export const TOOLS: Tool[] = [
       parent: str('имя родительской сущности'),
       variant: str('"Size=M, View=Accent" — оси, добавляемые этим набором'),
       filter: str('[{"View":"Accent"}] — какие варианты оставить, JSON или путь к файлу'),
+      breakpoints: str('для page: "767,1279" — верхние границы mobile/tablet (пустой сегмент — диапазона нет); запишется в config, если ещё не заданы'),
     }, ['name', 'url']),
-    run: ({ kind, name, url, source, parent, variant, filter }: { kind?: string; name: string; url: string; source?: string; parent?: string; variant?: string; filter?: string }) =>
-      api.create({ kind, name, url, source, parent, variant, filter }),
+    run: ({ kind, name, url, source, parent, variant, filter, breakpoints }: { kind?: string; name: string; url: string; source?: string; parent?: string; variant?: string; filter?: string; breakpoints?: string }) =>
+      api.create({ kind, name, url, source, parent, variant, filter, breakpoints }),
   },
   {
     name: 'sources',
@@ -102,23 +103,24 @@ export const TOOLS: Tool[] = [
   },
   {
     name: 'extract',
-    description: 'Тяжёлые данные Figma — мимо контекста. action receiver: mode start — запустить локальный приёмник файлов (запусти перед extract/export в chrome-режиме), mode stop — остановить. action snippet: код для выполнения в странице Figma браузерным инструментом (chrome-devtools evaluate_script / javascript_tool); step probe|extract|export, до создания сущности — probe по url. action put: записать content в craftlog (путь вида figma/raw/plugin.json; base64 для PNG) — запасной путь без receiver. action rest-images: PNG-эталоны через Figma REST API (нужен FIGMA_TOKEN).',
+    description: 'Тяжёлые данные Figma — мимо контекста. action receiver: mode start — запустить локальный приёмник файлов (запусти перед extract/export в chrome-режиме), mode stop — остановить. action snippet: код для выполнения в странице Figma браузерным инструментом (chrome-devtools evaluate_script / javascript_tool); step probe-extract — разведка и выгрузка одним прогоном, extract — выгрузка, probe — только разведка (до создания сущности — probe по url), export — PNG-эталоны. action put: записать content в craftlog (путь вида figma/raw/plugin.json; base64 для PNG) — запасной путь без receiver. action rest-images: PNG-эталоны через Figma REST API (нужен FIGMA_TOKEN).',
     inputSchema: obj({
       action: enum_(['receiver', 'snippet', 'put', 'rest-images'], ''),
       mode: enum_(['start', 'stop'], 'для receiver, по умолчанию start'),
       entity: str('для snippet/put/rest-images'),
-      step: enum_(['probe', 'extract', 'export'], 'для snippet'),
+      step: enum_(['probe', 'probe-extract', 'extract', 'export'], 'для snippet'),
       url: str('ссылка Figma — probe до создания сущности'),
       inline: bool('для snippet: код целиком в ответе, без загрузки с receiver'),
       path: str('для put: путь внутри craftlog, например figma/raw/plugin.json'),
       content: str('для put: содержимое файла'),
       base64: bool('для put: content в base64 (PNG)'),
+      fresh: bool('для rest-images: перекачать эталоны, игнорируя кэш'),
     }, ['action']),
-    run: ({ action, mode, entity, step, url, inline, path, content, base64 }: any) => {
+    run: ({ action, mode, entity, step, url, inline, path, content, base64, fresh }: any) => {
       if (action === 'receiver') return mode === 'stop' ? api.receiverStop() : api.receiverStart();
       if (action === 'snippet') return api.snippet({ entity, url, step: step ?? 'probe', inline: Boolean(inline) });
       if (action === 'put') return api.putFile({ entity, path, content, base64: Boolean(base64) });
-      return api.restImages(entity);
+      return api.restImages(entity, Boolean(fresh));
     },
   },
 

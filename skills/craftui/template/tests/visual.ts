@@ -1,5 +1,7 @@
 // Screenshot tests: every craftlog/figma/screenshots/<id>.png is compared with the demo target <id>.
 // Results go to craftlog/visual/output/<id>.{json,actual.png,diff.png}; the craftui MCP server's verify tool summarizes them.
+// A render with unchanged inputs replays the last result from craftlog/visual/cache/<id>.json instead of rendering.
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { expect, type Locator, test } from '@playwright/test';
@@ -12,6 +14,20 @@ const config = JSON.parse(fs.readFileSync('craftui.config.json', 'utf8'));
 // Pages have references of their own scale and threshold (craftui.config.json → pages).
 const pagesFolder = (config.dirs?.page ?? 'src/pages').split('/').pop();
 const readJson = (file: string) => (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : undefined);
+
+const CACHE_VERSION = 1;
+const digest = (parts: (string | Buffer)[]) => {
+  const h = createHash('sha256');
+  for (const p of parts) h.update(p);
+  return h.digest('hex').slice(0, 16);
+};
+const walkFiles = (dir: string): string[] =>
+  fs.existsSync(dir)
+    ? fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
+        const p = path.join(dir, d.name);
+        return d.isDirectory() ? walkFiles(p) : /\.(tsx?|css)$/.test(d.name) ? [p] : [];
+      })
+    : [];
 
 export function describeVisual(name: string, kind = 'components') {
   const isPage = kind === pagesFolder;
@@ -29,6 +45,23 @@ export function describeVisual(name: string, kind = 'components') {
     ? fs.readdirSync(shots).filter((f) => f.endsWith('.png')).map((f) => f.slice(0, -4)).sort()
     : [];
 
+  // Everything the render and the comparison depend on: the entity's code, shared demo/lib/tokens, spec,
+  // node-map, bounds, thresholds and the reference PNG itself.
+  const entityDir = path.join('src', kind, name);
+  const cacheDir = path.join(root, 'visual', 'cache');
+  const keyOf = (id: string): string => {
+    const files = [
+      ...walkFiles(entityDir).filter((f) => !f.split(path.sep).includes('craftlog')),
+      ...walkFiles('src/lib'),
+      ...walkFiles('demo').filter((f) => !f.includes('.generated')),
+      ...['src/tokens.css', 'tests/compare.ts'].filter((f) => fs.existsSync(f)),
+    ].sort();
+    const parts: (string | Buffer)[] = [String(CACHE_VERSION), String(scale)];
+    for (const f of files) parts.push(f, fs.readFileSync(f));
+    parts.push(JSON.stringify(spec ?? null), JSON.stringify(nodeMap), JSON.stringify(bounds), JSON.stringify(visualConfig), fs.readFileSync(path.join(shots, `${id}.png`)));
+    return digest(parts);
+  };
+
   test.describe(`${kind}/${name}`, () => {
     // The browser renders at the reference scale (pages differ from components), compare() checks the same scale.
     test.use({ deviceScaleFactor: scale });
@@ -39,6 +72,15 @@ export function describeVisual(name: string, kind = 'components') {
       test(id, async ({ page }) => {
         test.skip(Boolean(t.skip), t.reason);
         fs.mkdirSync(out, { recursive: true });
+        // The cache replays the last result for unchanged inputs: no render, no compare, same output json for verify.
+        const key = keyOf(id);
+        const cacheFile = path.join(cacheDir, `${id}.json`);
+        const cached = readJson(cacheFile) as { key: string; result: { pass?: boolean; report?: string[] } } | undefined;
+        if (cached?.key === key && cached.result) {
+          fs.writeFileSync(path.join(out, `${id}.json`), JSON.stringify(cached.result, null, 2));
+          expect(cached.result.pass, ['[кэш]', ...(cached.result.report ?? [])].join('\n')).toBe(true);
+          return;
+        }
         await page.goto(`/#/${kind}/${name}?target=${encodeURIComponent(id)}&isolated`);
         const target = page.locator(`[data-cu-target="${id}"]`);
         await expect(target, `target "${id}" is missing in ${name}.demo.tsx`).toBeVisible({ timeout: 15_000 });
@@ -69,10 +111,10 @@ export function describeVisual(name: string, kind = 'components') {
         const [headline, ...details] = describeResult(result);
         const report = [headline, ...styleIssues, ...details];
         const { diffPng, ...json } = result;
-        fs.writeFileSync(
-          path.join(out, `${id}.json`),
-          JSON.stringify({ id, pass, maxDiffRatio, ...json, styleIssues, report }, null, 2),
-        );
+        const reportJson = { id, pass, maxDiffRatio, ...json, styleIssues, report };
+        fs.writeFileSync(path.join(out, `${id}.json`), JSON.stringify(reportJson, null, 2));
+        fs.mkdirSync(cacheDir, { recursive: true });
+        fs.writeFileSync(cacheFile, JSON.stringify({ key, result: reportJson }, null, 2));
         expect(pass, report.join('\n')).toBe(true);
       });
     }

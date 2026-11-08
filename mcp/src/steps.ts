@@ -44,9 +44,8 @@ function pageInstructions(e: Entity, state: State, stepId: string): string[] {
   const map: Record<string, string[]> = {
     extract: [
       `1) В фоне: craftui extract {"action":"receiver"}. Открой ${state.figma.url} в Chrome (вход — только пользователь).`,
-      `2) craftui extract {"action":"snippet","entity":"${n}","step":"probe"} — выполни вывод во вкладке Figma. В frames — фреймы с шириной и диапазоном (${bp}).`,
-      `3) Один фрейм на брейкпоинт: первый уже источник, остальные — craftui sources {"entity":"${n}","action":"add","url":"<ссылка на фрейм>"}.`,
-      `4) Так же выполни snippet с step "extract": сохранит craftlog/figma/raw/plugin.json, в ответе только сводка. Файл не открывай.`,
+      `2) craftui extract {"action":"snippet","entity":"${n}","step":"probe-extract"} — выполни вывод во вкладке Figma: разведка и выгрузка одним прогоном, в ответе сводка (в probe.frames — фреймы с шириной, ${bp}).`,
+      `3) Один фрейм на брейкпоинт: первый уже источник, остальные — craftui sources {"entity":"${n}","action":"add","url":"<ссылка на фрейм>"}, затем повтори тот же сниппет.`,
       `Трудности — ${R}/figma-chrome.md; страницы — ${R}/kind-page.md.`,
     ],
     normalize: [`craftui spec {"action":"normalize","entity":"${n}"}`, 'Проверь сводку: какой фрейм в каком брейкпоинте, предупреждения, части, компоненты. spec.json не открывай.'],
@@ -91,10 +90,9 @@ export function instructions(e: Entity, state: State, stepId: string): string[] 
       ? [
           `1) В фоне: craftui extract {"action":"receiver"} (принимает файлы из страницы Figma).`,
           `2) Открой ${state.figma.url} в Chrome. Просит вход — попроси пользователя войти (craftui step {"action":"wait","entity":"${n}","text":"вход в Figma"}) и жди.`,
-          `3) craftui extract {"action":"snippet","entity":"${n}","step":"probe"} печатает JS: выполни его во вкладке Figma инструментом браузера`,
-          `   (chrome-devtools evaluate_script или javascript_tool). Ответ — короткий JSON. Plugin API появляется не сразу: false → повтори.`,
-          `4) Наборы и фильтры: craftui sources {"entity":"${n}"} (сотни вариантов — добавь filter).`,
-          `5) Так же выполни snippet с step "extract". Он сам сохранит craftlog/figma/raw/plugin.json; в ответе только сводка. Файл не открывай.`,
+          `3) craftui extract {"action":"snippet","entity":"${n}","step":"probe-extract"} печатает JS: выполни его во вкладке Figma инструментом браузера`,
+          `   (chrome-devtools evaluate_script или javascript_tool). Один прогон: разведка + выгрузка в raw/plugin.json, в ответе сводка. Plugin API появляется не сразу: false → повтори.`,
+          `4) Сниппет сам скажет, если наборов несколько или вариантов больше капа: настрой источники (craftui sources {"entity":"${n}"} — add/filter) и повтори тот же сниппет. Файлы raw не открывай.`,
           `Трудности (вход, таймаут, receiver недоступен) — ${src}, нужный раздел.`,
         ]
       : [

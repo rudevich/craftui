@@ -22,6 +22,8 @@ export type Config = {
   scale: number;
   maxDiffRatio: number;
   tokenPrefix: string;
+  /** Extract refuses a source with more variants than this (craftui sources filter narrows it). */
+  maxExtractVariants: number;
   pages: { breakpoints: Breakpoints | null; scale: number; maxDiffRatio: number; export: boolean };
   port: number;
   receiverPort: number;
@@ -322,6 +324,8 @@ export type SnippetParams = {
   scale?: number;
   breakpoints?: Breakpoints | null;
   maxNodes?: number;
+  /** Extract cap per source (Config.maxExtractVariants). */
+  maxVariants?: number;
   sources?: Source[];
   targets?: { id: string; nodeId: string }[];
   assets?: { nodeId: string; file: string; format?: string }[];

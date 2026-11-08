@@ -8,7 +8,7 @@ import { sourcesOf } from './sources.ts';
 import type { Entity, SnippetParams, SourceFile, Spec } from './types.ts';
 
 const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'snippets');
-const STEPS = ['probe', 'extract', 'export'];
+const STEPS = ['probe', 'probe-extract', 'extract', 'export'];
 // Pages have snippets of their own (breakpoint frames, pictures); the layer serializer is shared (snippets/lib/core.ts).
 const fileOf = (kind: string, step: string) => path.join(DIR, kind === 'page' && step !== 'probe' ? `${step}-page.ts` : `${step}.ts`);
 
@@ -28,17 +28,21 @@ function stripTypes(code: string): string {
  * exports dropped (each lib once, before what uses it), its default `run` called with the parameters.
  */
 export function bundle(file: string, p: SnippetParams): string {
-  const order: string[] = [];
-  const visit = (f: string) => {
-    if (order.includes(f)) return;
-    for (const m of fs.readFileSync(f, 'utf8').matchAll(/^import \{[^}]*\} from '(\.[^']+)';$/gm)) visit(path.resolve(path.dirname(f), m[1]));
-    order.push(f);
+  // Named imports share one scope; a default import (`import probeRun from './probe.ts'`) renames the
+  // imported file's `run` to the local name, so probe-extract can call probe and extract in one bundle.
+  const order: { file: string; defaultAs?: string }[] = [];
+  const visit = (f: string, defaultAs?: string) => {
+    if (order.some((o) => o.file === f)) return;
+    const src = fs.readFileSync(f, 'utf8');
+    for (const m of src.matchAll(/^import \{[^}]*\} from '(\.[^']+)';$/gm)) visit(path.resolve(path.dirname(f), m[1]));
+    for (const m of src.matchAll(/^import (\w+) from '(\.[^']+)';$/gm)) visit(path.resolve(path.dirname(f), m[2]), m[1]);
+    order.push({ file: f, defaultAs });
   };
   visit(file);
-  const body = order.map((f) =>
+  const body = order.map(({ file: f, defaultAs }) =>
     stripTypes(fs.readFileSync(f, 'utf8'))
       .replace(/^import\b[^;]*;$/gm, '')
-      .replace(/^export default async function run\b/m, 'async function run')
+      .replace(/^export default async function run\b/m, `async function ${defaultAs ?? 'run'}`)
       .replace(/^export (async function|function|const) /gm, '$1 '),
   );
   return `(async (CU) => {\n${body.join('\n')}\nreturn await run(CU);\n})(${JSON.stringify(p)})`;
@@ -58,7 +62,8 @@ function params(e: Entity, step: string): SnippetParams {
     breakpoints: breakpointsForSnippet(cfg.pages.breakpoints),
   };
   if (e.kind === 'page') p.maxNodes = 15000; // a screen holds far more layers than a component
-  if (step === 'extract') p.sources = sourcesOf(e).sources.map(({ nodeId, variant, filter }) => ({ nodeId, variant, filter }));
+  p.maxVariants = cfg.maxExtractVariants;
+  if (step === 'extract' || step === 'probe-extract') p.sources = sourcesOf(e).sources.map(({ nodeId, variant, filter }) => ({ nodeId, variant, filter }));
   if (step === 'export') {
     const spec = readJson<Spec>(e.specFile);
     if (!spec) fail(`нет ${e.specFile} — сначала craftui spec {"action":"normalize","entity":"${e.name}"}`);

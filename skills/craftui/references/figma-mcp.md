@@ -26,10 +26,12 @@
 
 ## Эталоны (шаг screenshots), по порядку
 
-1. В ответах MCP есть ссылки на изображения узлов (локальный сервер отдаёт `http://localhost:3845/assets/…`) → скачай `curl -o craftlog/figma/screenshots/<id>.png`.
-2. В окружении есть `FIGMA_TOKEN` → `craftui extract {"action":"rest-images","entity":"<Name>"}` (один пакетный запрос, масштаб из конфига).
+1. В окружении есть `FIGMA_TOKEN` → `craftui extract {"action":"rest-images","entity":"<Name>"}`: один пакетный запрос, масштаб из конфига, загрузка параллельно. PNG кэшируются по nodeId до ресинка: повторный вызов не перекачивает неизменное, `"fresh":true` перекачает принудительно.
+2. В ответах MCP есть ссылки на изображения узлов (локальный сервер отдаёт `http://localhost:3845/assets/…`) → скачай `curl -o craftlog/figma/screenshots/<id>.png`.
 3. Есть Chrome → гибрид: эталоны через `snippet export` (`figma-chrome.md`).
 4. Иначе попроси пользователя: выделить варианты → Export → PNG 2x → сохранить как `<id>.png` в `craftlog/figma/screenshots/`. Список id: `craftui spec {"action":"normalize","entity":"<Name>","summary":true}`. До этого сверяй «на глаз»: `get_screenshot` против `craftlog/visual/output/<id>.actual.png`.
+
+Кэш эталонов привязан к выгрузке raw (штамп — `extractedAt` или время `metadata.xml`): после ресинка шага extract эталоны перекачаются сами.
 
 ## Вложенные компоненты
 

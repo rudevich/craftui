@@ -17,12 +17,31 @@ const matches = (vp: Record<string, string> | null | undefined, filter: VariantF
 export default async function run(CU: SnippetParams) {
   const c = await core(CU);
   const { figma, plain, ser } = c;
+  const maxVariants = CU.maxVariants ?? MAX_VARIANTS;
   const sources: RawSource[] = [];
   const warnings: string[] = [];
   const variants: (RawVariant & { ownVariantProperties: Record<string, string> | null })[] = [];
-  for (const [index, s] of (CU.sources?.length ? CU.sources : [{ nodeId: CU.nodeId ?? '', variant: {} }]).entries()) {
-    const node = await figma.getNodeByIdAsync(s.nodeId);
+  const list = CU.sources?.length ? CU.sources : [{ nodeId: CU.nodeId ?? '', variant: {} }];
+  const nodes = await Promise.all(list.map((s) => figma.getNodeByIdAsync(s.nodeId)));
+  // A source over the cap used to throw mid-run, losing the sources serialized before it: count everything first.
+  const pickedOf: ComponentNode[][] = [];
+  const over: string[] = [];
+  for (const [index, s] of list.entries()) {
+    const node = nodes[index];
     if (!node) throw new Error(`node ${s.nodeId} not found`);
+    const children = (node.type === 'COMPONENT_SET' ? node.children : [node]) as ComponentNode[];
+    const picked = children.filter((v) => matches(v.variantProperties, s.filter));
+    pickedOf.push(picked);
+    if (picked.length > maxVariants) {
+      const defs = ((node as ComponentSetNode).componentPropertyDefinitions ?? {}) as Record<string, { type: string; variantOptions?: string[] }>;
+      const axes = Object.entries(defs).filter(([, d]) => d.type === 'VARIANT').map(([k, d]) => `${k}: ${(d.variantOptions ?? []).join('/')}`);
+      over.push(`источник ${index} «${node.name}»: ${picked.length} вариантов, кап ${maxVariants} — задай фильтр: craftui sources {"entity":"${CU.name}","action":"filter","index":${index}}${axes.length ? ` (оси: ${axes.join('; ')})` : ''}`);
+    }
+  }
+  if (over.length) throw new Error(over.join('\n'));
+  for (const [index, s] of list.entries()) {
+    const node = nodes[index]!;
+    const picked = pickedOf[index];
     const sized = node as SceneNode;
     const info: RawSource = { id: node.id, name: node.name, type: node.type, key: (node as ComponentNode).key, width: sized.width, height: sized.height, variant: s.variant ?? {}, filter: s.filter };
     try {
@@ -31,15 +50,10 @@ export default async function run(CU: SnippetParams) {
     if ('description' in node) info.description = node.description;
     if (node.type === 'COMPONENT' && node.parent?.type === 'COMPONENT_SET') info.parentSet = { id: node.parent.id, name: node.parent.name };
     sources.push(info);
-    const children = (node.type === 'COMPONENT_SET' ? node.children : [node]) as ComponentNode[];
-    const picked = children.filter((v) => matches(v.variantProperties, s.filter));
     if (!picked.length) {
       const defs = (info.componentPropertyDefinitions ?? {}) as Record<string, { type: string; variantOptions?: string[] }>;
       const axes = Object.entries(defs).filter(([, d]) => d.type === 'VARIANT').map(([k, d]) => `${k}: ${(d.variantOptions ?? []).join('/')}`);
       warnings.push(`источник ${index} «${node.name}»: фильтр не нашёл вариантов (оси: ${axes.join('; ') || '—'}) — craftui sources {"entity":"${CU.name}","action":"filter","index":${index}}`);
-    }
-    if (picked.length > MAX_VARIANTS) {
-      throw new Error(`${node.name}: ${picked.length} вариантов — задай фильтр (craftui sources {"entity":"${CU.name}","action":"filter"}), не больше ${MAX_VARIANTS} за раз`);
     }
     for (const v of picked) {
       const own = plain(v.variantProperties ?? null);

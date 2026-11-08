@@ -1,5 +1,7 @@
 import { describe, expect, it } from '@rstest/core';
+import { breakpointsFromArg } from './lib.ts';
 import { boolContent, mergeDefinitions, mergeProps, normNode } from './normalize.ts';
+import { bundle } from './snippets.ts';
 import { markSlotContent, suggestSlots } from './slots.ts';
 import { toTsx } from './svg.ts';
 import { sameColor } from './tokens.ts';
@@ -599,5 +601,27 @@ describe('variable modes a layer switches (dark theme, typography)', () => {
       '  <span className={styles.dot}></span>',
       '</span>',
     ]);
+  });
+});
+
+describe('snippets bundle', () => {
+  it('probe-extract: default imports rename the imported run, one entry run remains', () => {
+    const code = bundle(new URL('./snippets/probe-extract.ts', import.meta.url).pathname, { nodeId: '1:2', fileKey: 'f', receiver: 'http://127.0.0.1:4601' });
+    expect(code).toContain('async function probeRun');
+    expect(code).toContain('async function extractRun');
+    expect(code).not.toMatch(/^import\b/m);
+    expect(code.match(/^async function run\(/gm)).toHaveLength(1);
+    expect(code).toContain('return await run(CU);');
+  });
+});
+
+describe('breakpointsFromArg', () => {
+  it('parses 1–3 upper bounds, an empty slot is no range, garbage throws', () => {
+    expect(breakpointsFromArg('767')).toEqual({ mobile: { max: 767 }, tablet: null, desktop: { min: 768 }, largeDesktop: null });
+    expect(breakpointsFromArg('600,1024')).toEqual({ mobile: { max: 600 }, tablet: { min: 601, max: 1024 }, desktop: { min: 1025 }, largeDesktop: null });
+    expect(breakpointsFromArg('600,,1500')).toEqual({ mobile: { max: 600 }, tablet: null, desktop: { min: 601, max: 1500 }, largeDesktop: { min: 1501 } });
+    expect(breakpointsFromArg('')).toBeUndefined();
+    expect(breakpointsFromArg(undefined)).toBeUndefined();
+    expect(() => breakpointsFromArg('abc')).toThrow();
   });
 });
