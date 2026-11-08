@@ -8,6 +8,7 @@
     "types": ["node"],
     "strict": true,
     "noEmit": true,
+    "incremental": true,
     "skipLibCheck": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,

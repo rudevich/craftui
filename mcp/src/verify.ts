@@ -104,7 +104,9 @@ export function run(ref: string | undefined, { grep, unit, visual }: { grep?: st
         const styleOnly = results.filter((x) => x.pass && x.styleIssues?.length).length;
         if (styleOnly) lines.push(`  style-check: замечания в ${styleOnly} прошедших targets (в <id>.json)`);
       }
-      renderTargets(e, ids.map((id) => readJson<VisualResult>(path.join(out, `${id}.json`)) ?? { id }));
+      // The results were already parsed above: skipped targets (no json) get the bare { id } row.
+      const byId = new Map(results.map((x) => [x.id, x]));
+      renderTargets(e, selected.map((id) => byId.get(id) ?? { id }));
     }
   }
 

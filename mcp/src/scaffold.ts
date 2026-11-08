@@ -194,7 +194,7 @@ export function run(ref: string | undefined, force: boolean, addOnly: boolean): 
   const kept = [];
   for (const [rel, content] of Object.entries(files)) {
     const file = path.join(e.dir, rel);
-    if (fs.existsSync(file) && !force) {
+    if (fs.existsSync(file) && (!force || fs.readFileSync(file, 'utf8') === content)) {
       kept.push(rel);
       continue;
     }

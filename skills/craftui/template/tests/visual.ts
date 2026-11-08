@@ -46,10 +46,10 @@ export function describeVisual(name: string, kind = 'components') {
     : [];
 
   // Everything the render and the comparison depend on: the entity's code, shared demo/lib/tokens, spec,
-  // node-map, bounds, thresholds and the reference PNG itself.
+  // node-map, bounds and thresholds — shared across targets, so it is digested once; only the PNG differs per target.
   const entityDir = path.join('src', kind, name);
   const cacheDir = path.join(root, 'visual', 'cache');
-  const keyOf = (id: string): string => {
+  const sharedKey = (() => {
     const files = [
       ...walkFiles(entityDir).filter((f) => !f.split(path.sep).includes('craftlog')),
       ...walkFiles('src/lib'),
@@ -58,9 +58,10 @@ export function describeVisual(name: string, kind = 'components') {
     ].sort();
     const parts: (string | Buffer)[] = [String(CACHE_VERSION), String(scale)];
     for (const f of files) parts.push(f, fs.readFileSync(f));
-    parts.push(JSON.stringify(spec ?? null), JSON.stringify(nodeMap), JSON.stringify(bounds), JSON.stringify(visualConfig), fs.readFileSync(path.join(shots, `${id}.png`)));
+    parts.push(JSON.stringify(spec ?? null), JSON.stringify(nodeMap), JSON.stringify(bounds), JSON.stringify(visualConfig));
     return digest(parts);
-  };
+  })();
+  const keyOf = (id: string): string => digest([sharedKey, fs.readFileSync(path.join(shots, `${id}.png`))]);
 
   test.describe(`${kind}/${name}`, () => {
     // The browser renders at the reference scale (pages differ from components), compare() checks the same scale.

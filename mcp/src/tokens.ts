@@ -35,7 +35,8 @@ export function run(ref: string | undefined): number {
       added.push(`${t.name}${selector === ':root' ? '' : ` ${selector}`}`);
     }
   }
-  fs.writeFileSync(FILE, css);
+  // Resync runs rewrite nothing when the tokens are already merged: the file stays untouched for the consumer.
+  if (!fs.existsSync(FILE) || fs.readFileSync(FILE, 'utf8') !== css) fs.writeFileSync(FILE, css);
   appendHistory(e, `tokens.css: +${added.length}, уже были ${existing}${near.length ? `, почти равных ${near.length} (${near.join('; ')})` : ''}, конфликтов ${conflicts.length}`);
   console.log(`tokens.css: добавлено ${added.length}, уже были ${existing}, конфликтов ${conflicts.length}`);
   for (const a of added.slice(0, 30)) console.log(`  + ${a}`);
