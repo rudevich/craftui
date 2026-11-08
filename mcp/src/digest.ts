@@ -183,7 +183,20 @@ const childSel = (rootSel: string, cls: string) => (cls === 'root' ? rootSel : `
 
 export function cssDraft(name: string, spec: Spec, nodeMap: NodeMap, tag: string): string {
   const a = analyze(spec, nodeMap, tag);
-  const classes = [...new Set(Object.values(nodeMap).filter((c): c is string => Boolean(c)))];
+  // Layers resolved into imported entities are rendered by that entity: the draft carries neither their markup nor styles.
+  const entityLayers = entityLayersOf(spec);
+  const skip = new Set<string>();
+  for (const t of spec.targets) {
+    const walk = (n: SpecNode) => {
+      if (entityLayers.has(n.figmaId)) {
+        const c = nodeMap[n.key];
+        if (c) skip.add(c);
+      }
+      n.children?.forEach(walk);
+    };
+    walk(t.tree);
+  }
+  const classes = [...new Set(Object.values(nodeMap).filter((c): c is string => Boolean(c)))].filter((c) => !skip.has(c));
   const out = [
     `/* ${name}: черновик из craftlog/figma/spec.json (scaffold). База — target "${a.base.id}", ниже — что меняет каждое значение и сочетание. */`,
     '/* Правь по craftui verify: черновик не знает про слоты, логику и платформу (фокус, disabled). */',
@@ -199,7 +212,7 @@ export function cssDraft(name: string, spec: Spec, nodeMap: NodeMap, tag: string
     if (Object.keys(d).length || !elsewhere.has(cls)) out.push(block(`.${cls}`, d));
   }
   for (const r of [...a.singles, ...a.combos]) {
-    const rules = Object.entries(r.rules).filter(([, d]) => Object.keys(d).length);
+    const rules = Object.entries(r.rules).filter(([cls, d]) => !skip.has(cls) && Object.keys(d).length);
     if (!rules.length) continue;
     out.push(`/* ${label(r.diff)} */`);
     for (const [cls, d] of rules) out.push(block(childSel(a.selector(r.diff), cls), d));
@@ -215,6 +228,18 @@ function textProp(node: SpecNode, spec: Spec, target: Target): string | undefine
   return (props.find((p) => p.nodeKey === node.key) ?? props.find((p) => !p.nodeKey && target.props?.[p.react!] === node.text?.characters))?.react ?? undefined;
 }
 
+/** figmaId → entity name for instances resolved into imported entities: the drafts place them, not their layers. */
+function entityLayersOf(spec: Spec): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const i of spec.instances ?? []) {
+    if (!i.resolution?.startsWith('entity:')) continue;
+    const name = i.resolution.slice('entity:'.length).split('/')[1] ?? '';
+    if (!name) continue;
+    for (const id of i.nodeIds) map.set(id, name);
+  }
+  return map;
+}
+
 /** data-* attributes of the modes a layer switches (Theme=Dark → data-theme="dark"): tokens.css keys its values by them. */
 export const modeAttrs = (modes: Record<string, string> | undefined) => Object.entries(modes ?? {}).map(([a, v]) => ` ${a}="${v}"`).join('');
 
@@ -222,11 +247,17 @@ export function markupDraft(spec: Spec, nodeMap: NodeMap, indent = '      '): st
   const t = defaultTarget(spec);
   // Where each slot sits: bound layers carry `slot`, targets list the layer of every slot they show.
   const slotAt = new Map(spec.targets.flatMap((x) => Object.entries(x.slots ?? {}).map(([prop, s]) => [s.key, prop])));
+  const entityAt = entityLayersOf(spec);
   const lines: string[] = [];
+  // The tree root itself can be an instance (a composite): the component assembles from it, the layers below are its surroundings.
+  const rootEntity = entityAt.get(t.tree.figmaId);
+  if (rootEntity) lines.push(`${indent}{/* Корень — <${rootEntity} />: рендерь его композицию; слои ниже — окружение */}`);
   const walk = (node: SpecNode, depth: number): number | void => {
     const slot = node.slot ?? slotAt.get(node.key);
     if (slot) return lines.push(`${indent}${'  '.repeat(depth)}{${slot}}`);
     if (node.hidden) return;
+    const entity = entityAt.get(node.figmaId);
+    if (entity) return lines.push(`${indent}${'  '.repeat(depth)}{/* <${entity} /> */}`);
     const cls = node.key === t.tree.key ? null : nodeMap[node.key];
     const pad = `${indent}${'  '.repeat(depth)}`;
     const content = node.text ? `{${textProp(node, spec, t) ?? JSON.stringify(node.text.characters ?? '')}}` : null;
@@ -293,6 +324,23 @@ export function briefOf(n: string, spec: Spec, nodeMap: NodeMap): string {
     `Разметка target "${a.base.id}" (класс ← слой; черновик уже в ${n}.tsx):`,
     ...markupDraft(spec, nodeMap, '  '),
   ];
+  // Resolved instances: what the component composes from, and container-shaped repeats.
+  const entities = (spec.instances ?? []).filter((i) => i.resolution?.startsWith('entity:'));
+  if (entities.length) {
+    lines.push('', 'Инстансы:', ...entities.map((i) => `  ${i.name} ×${i.nodeIds.length} → ${i.resolution!.slice('entity:'.length)}`));
+    const containers = entities.filter((i) => i.nodeIds.length >= 3);
+    if (containers.length) lines.push(`  ×N однотипных инстансов (${containers.map((i) => i.name).join(', ')}) — вероятный контейнер слотов: продумай children/slot API.`);
+  }
+  // Unloaded library content: the spec does not hold what those instances render.
+  const unloaded = new Set<string>();
+  for (const t of spec.targets) {
+    const walk = (x: SpecNode) => {
+      if (x.unloaded) unloaded.add(x.instance?.name ?? x.name);
+      x.children?.forEach(walk);
+    };
+    walk(t.tree);
+  }
+  if (unloaded.size) lines.push('', `⚠ Содержимое не подгрузилось у: ${[...unloaded].join(', ')} — состав айтемов/иконок сверяй с эталонами PNG и уточни у пользователя.`);
   const inBase = new Set(Object.keys(a.baseDecls));
   const elsewhere = [...new Set(Object.values(nodeMap).filter((c): c is string => Boolean(c)))].filter((c) => !inBase.has(c));
   if (elsewhere.length) {

@@ -247,6 +247,42 @@ describe('digest: drafts and brief for small context windows', () => {
     expect(markupDraft(spec, map, '')).toEqual(['<span className={styles.label}>{children}</span>']);
   });
 
+  it('instances resolved into entities become tags, not empty layers; css skips their classes', async () => {
+    const { markupDraft, cssDraft } = await import('./digest.ts');
+    const composed = {
+      ...spec,
+      targets: spec.targets.map((t, i) => ({
+        ...t,
+        tree: { ...t.tree, figmaId: '1:1', children: [...(t.tree.children ?? []), { key: 'root/item01', figmaId: '1:9', name: 'item01', type: 'INSTANCE', box: { w: 40, h: 40 } }] },
+      })),
+      instances: [{ key: 'k1', name: '.Item', nodeIds: ['1:9'], resolution: 'entity:component/Item' }],
+    } as unknown as typeof spec;
+    const composedMap = { ...map, 'root/item01': 'item01' };
+    const markup = markupDraft(composed, composedMap, '');
+    expect(markup.join('\n')).toContain('{/* <Item /> */}');
+    expect(markup.join('\n')).not.toContain('styles.item01');
+    const css = cssDraft('Test', composed, composedMap, 'div');
+    expect(css).not.toContain('.item01 {');
+    expect(css).toContain('.label {');
+    // The brief names the entity, counts the repeats and calls the container shape out.
+    const brief = (await import('./digest.ts')).briefOf('Test', composed, composedMap);
+    expect(brief).toContain('.Item ×1 → component/Item');
+  });
+
+  it('the brief warns about unloaded instances and repeated container shapes', async () => {
+    const { briefOf } = await import('./digest.ts');
+    const withUnloaded = {
+      ...spec,
+      targets: spec.targets.map((t) => ({
+        ...t,
+        tree: { ...t.tree, children: [...(t.tree.children ?? []), { key: 'root/item01', figmaId: '1:9', name: '.Item', type: 'INSTANCE', unloaded: true, box: { w: 40, h: 40 } }] },
+      })),
+      instances: [{ key: 'k1', name: '.Item', nodeIds: ['1:9'], resolution: null }],
+    } as unknown as typeof spec;
+    const brief = briefOf('Test', withUnloaded, map);
+    expect(brief).toContain('⚠ Содержимое не подгрузилось у: .Item');
+  });
+
   it('brief stays within its budget however big the spec is', async () => {
     const { briefOf } = await import('./digest.ts');
     const many = { ...spec, targets: Array.from({ length: 300 }, (_, i) => ({ ...spec.targets[i % 5], id: `t${i}` })) };
