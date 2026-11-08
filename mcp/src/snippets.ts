@@ -73,11 +73,15 @@ function params(e: Entity, step: string): SnippetParams {
   return p;
 }
 
+/** The completion-marker wrapper: the snippet is one expression returning a promise, and the result
+ *  also lands in window.__craftui — long runs outlive the browser tool's timeout (figma-chrome.md). */
+export function wrapSnippet(step: string, code: string): string {
+  return `((p) => { window.__craftui = { step: '${step}', status: 'running' }; p.then((result) => { window.__craftui = { step: '${step}', status: 'done', result }; }, (err) => { window.__craftui = { step: '${step}', status: 'error', error: String(err) }; }); return p; })(${code.trim()})`;
+}
+
 export function renderSnippet(e: Entity, step: string): string {
   if (!STEPS.includes(step)) throw new Error(`snippet: ${STEPS.join('|')}`);
-  const code = bundle(fileOf(e.kind, step), params(e, step));
-  // Long runs may outlive the browser tool's timeout: the result is also kept in window.__craftui.
-  return `((p) => { window.__craftui = { step: '${step}', status: 'running' }; p.then((result) => { window.__craftui = { step: '${step}', status: 'done', result }; }, (err) => { window.__craftui = { step: '${step}', status: 'error', error: String(err) }; }); return p; })(${code.trim()})`;
+  return wrapSnippet(step, bundle(fileOf(e.kind, step), params(e, step)));
 }
 
 export function run([ref, step]: (string | undefined)[], { inline = false }: { inline?: boolean } = {}) {
@@ -87,8 +91,8 @@ export function run([ref, step]: (string | undefined)[], { inline = false }: { i
     if (step !== 'probe') fail('по ссылке доступен только probe; для extract/export сначала создай сущность (инструмент create)');
     const cfg = config();
     const p: SnippetParams = { nodeId: figma.nodeId, fileKey: figma.fileKey, receiver: `http://127.0.0.1:${cfg.receiverPort ?? 4601}`, breakpoints: breakpointsForSnippet(cfg.pages.breakpoints) };
-    console.log('// Выполни в странице Figma (javascript_tool / evaluate_script), результат — JSON:');
-    console.log(bundle(fileOf('component', 'probe'), p));
+    console.log('// Выполни в странице Figma (javascript_tool / evaluate_script), результат — JSON и в window.__craftui:');
+    console.log(wrapSnippet('probe', bundle(fileOf('component', 'probe'), p)));
     return;
   }
   const e = findEntity(ref);

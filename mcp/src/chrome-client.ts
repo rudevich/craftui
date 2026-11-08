@@ -3,7 +3,6 @@
 // Node 24, zero dependencies (global WebSocket). The user starts Chrome with
 // --remote-debugging-port=9222 and opens the Figma file: the login stays with the user.
 
-const POLL_MS = 500;
 const DEFAULT_TIMEOUT = 5 * 60_000;
 
 const CDP_HINT = 'нет Chrome с debugging-портом — запусти его так и открой вкладку с файлом Figma:\n  open -a "Google Chrome" --args --remote-debugging-port=9222';
@@ -42,7 +41,7 @@ function connect(url: string): Promise<WebSocket> {
   });
 }
 
-function evaluate(ws: WebSocket, expression: string, requestId = 1): Promise<unknown> {
+function evaluate(ws: WebSocket, expression: string, awaitPromise: boolean, requestId = 1): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const onMessage = (ev: MessageEvent) => {
       const msg = JSON.parse(String(ev.data)) as Msg;
@@ -54,28 +53,32 @@ function evaluate(ws: WebSocket, expression: string, requestId = 1): Promise<unk
       resolve(msg.result?.result?.value);
     };
     ws.addEventListener('message', onMessage);
-    ws.send(JSON.stringify({ id: requestId, method: 'Runtime.evaluate', params: { expression, returnByValue: true } }));
+    ws.send(JSON.stringify({ id: requestId, method: 'Runtime.evaluate', params: { expression, returnByValue: true, awaitPromise } }));
   });
 }
 
-/** Runs a bundled snippet (renderSnippet output) in the Figma tab: starts it, polls window.__craftui
- *  until done/error — long runs outlive the evaluate call, the wrapper keeps the result on the page. */
+/** Runs a bundled snippet in the Figma tab. The snippet is one expression returning a promise
+ *  (wrapSnippet): awaitPromise resolves with the result; the same result stays in window.__craftui
+ *  for diagnosis if the connection drops (figma-chrome.md). */
 export async function runSnippet(cdp: string, code: string, { fileKey, timeoutMs = DEFAULT_TIMEOUT }: { fileKey?: string; timeoutMs?: number } = {}): Promise<unknown> {
   const targets = await listTargets(cdp);
   const target = findFigmaTarget(targets, fileKey);
   const ws = await connect(target.webSocketDebuggerUrl!);
+  const timer = setTimeout(() => ws.close(), timeoutMs);
   try {
-    await evaluate(ws, `(() => { try { void (${code}); return 'ok'; } catch (err) { return 'sync error: ' + err; } })()`);
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, POLL_MS));
-      const raw = (await evaluate(ws, 'JSON.stringify(window.__craftui ?? null)', 2)) as string;
-      const state = raw ? (JSON.parse(raw) as { status?: string; result?: unknown; error?: string }) : null;
-      if (state?.status === 'done') return state.result;
-      if (state?.status === 'error') throw new Error(String(state.error));
+    const done = evaluate(ws, code, true);
+    const failed = new Promise<never>((_, reject) => {
+      ws.onclose = () => reject(new Error(`вкладка закрылась или Chrome перезапустился во время прогона; результат сниппета — в window.__craftui вкладки`));
+    });
+    return await Promise.race([done, failed]);
+  } catch (err) {
+    if (String((err as Error)?.message ?? err).includes('WebSocket is closed')) {
+      throw new Error(`сниппет не закончил за ${Math.round(timeoutMs / 60000)} мин — соединение закрыто по таймауту; результат мог остаться в window.__craftui вкладки`);
     }
-    throw new Error(`сниппет не закончил за ${Math.round(timeoutMs / 60000)} мин — проверь вкладку Figma (window.__craftui)`);
+    throw err;
   } finally {
+    clearTimeout(timer);
+    ws.onclose = null;
     ws.close();
   }
 }

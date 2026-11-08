@@ -77,7 +77,8 @@ install.ts              установка: скилл в ~/.claude/skills и ~/
 Почти весь конвейер детерминирован, поэтому компонент можно прогнать вообще без LLM: `mcp/auto.ts` сам выполняет сниппеты во вкладке Chrome через CDP и доходит до черновиков кода, эталонов и сводки verify.
 
 ```bash
-open -a "Google Chrome" --args --remote-debugging-port=9222   # и открыть вкладку с файлом Figma (вход — за пользователем)
+# с Chrome 136 флаг работает только с выделенным профилем (второй экземпляр, вход в Figma — за пользователем)
+open -na "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir="$HOME/.craftui/chrome-profile"
 cd <проект-потребитель>
 node <репозиторий>/mcp/auto.ts --url <ссылка> --name <Name>
 ```

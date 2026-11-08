@@ -86,7 +86,8 @@ craftui sources {"entity":"BasicButton","action":"add","url":"<ссылка на
 
 Скрипт-раннер сам выполняет сниппеты во вкладке Figma через CDP — без единого LLM-вызова он доходит до черновиков кода, эталонов и сводки verify; шаг code остаётся за агентом или человеком.
 
-1. Пользователь запускает Chrome с debugging-портом и открывает вкладку с файлом Figma (вход — по-прежнему только пользователь): `open -a "Google Chrome" --args --remote-debugging-port=9222`.
+1. Пользователь запускает Chrome с debugging-портом и открывает вкладку с файлом Figma (вход — по-прежнему только пользователь). С Chrome 136 флаг игнорируется в основном профиле — нужен выделенный `--user-data-dir` (второй экземпляр, основной Chrome не трогает; логин в профиле сохраняется для будущих прогонов):
+   `open -na "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir="$HOME/.craftui/chrome-profile"`.
 2. В проекте-потребителе: `node <репозиторий>/mcp/auto.ts --url <ссылка> --name <Name> [--kind component|page] [--breakpoints "767,1279"] [--inline-graphic] [--fresh]`.
 3. Пайплайн: extract (probe-extract, шаг закрывает receiver) → normalize → confirm помечается skipped (эвристики) → screenshots (`FIGMA_TOKEN` → rest-images, иначе сниппет export) → deps (вложенные импортируются рекурсивно по mainId; twin-наборы и «нет mainId» — остановка со списком) → tokens → scaffold → verify.
 4. После остановки или конца прогона продолжение — как обычно: `craftui next` покажет текущий шаг; повторный запуск раннера продолжит существующую сущность.

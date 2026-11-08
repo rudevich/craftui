@@ -46,6 +46,11 @@ export function childName(base: string, taken: Set<string>): string {
   return name;
 }
 
+/** Instance name → valid entity name: PascalCase without a leading digit ("24 / Arrows / …" → "Arrows24…"). */
+export function entityName(instance: string): string {
+  return pascal(instance).replace(/^[0-9]+/, '') || 'Entity';
+}
+
 /** The entity by name and url: creates it when missing, resumes the existing one otherwise. */
 async function ensureEntity(kind: string, name: string, url: string, parent: string | undefined, args: Args): Promise<Entity> {
   const existing = listEntities().find((x) => x.name === name && x.kind === kind);
@@ -82,10 +87,24 @@ async function importEntity(kind: string, name: string, url: string, parent: str
   // The first deps call prints instances and writes null resolutions; the recursion imports the children.
   say(await api.entityDeps({ entity: name }));
   await resolveDeps(e, args, 0);
+  await finishResolved(e, args);
 
   say(await api.mergeTokens(name));
   say(await api.scaffoldFiles({ entity: name }));
   return e;
+}
+
+const PRE_CODE = ['extract', 'normalize', 'confirm', 'screenshots', 'deps', 'tokens', 'scaffold'];
+const preCodeOpen = (e: Entity): boolean => e.state.steps.some((s) => PRE_CODE.includes(s.id) && s.status !== 'done' && s.status !== 'skipped');
+
+/** Children imported by an earlier stopped run can still have open pre-code steps: finish their pipelines too
+ *  (importEntity is resume-safe — done steps are skipped, the recursion covers grandchildren). */
+async function finishResolved(e: Entity, args: Args): Promise<void> {
+  const resolved = (readJson<Spec>(e.specFile)?.instances ?? []).filter((i) => i.resolution?.startsWith('entity:'));
+  for (const i of resolved) {
+    const child = findEntity(i.resolution!.slice('entity:'.length));
+    if (preCodeOpen(child)) await importEntity(child.kind, child.name, '', undefined, args);
+  }
 }
 
 /** Import-all policy: every unresolved instance with a mainId becomes a child entity (the same cycle, depth-limited);
@@ -109,7 +128,7 @@ async function resolveDeps(e: Entity, args: Args, depth: number): Promise<void> 
     // An earlier child may have resolved this component (several instances share one main): skip it then.
     if (!unresolved().some((x) => x.key === i.key)) continue;
     const url = `https://www.figma.com/design/${spec.figma.fileKey}/?node-id=${i.mainId!.replace(/:/g, '-')}`;
-    const child = childName(pascal(i.name), new Set(listEntities().map((x) => x.name)));
+    const child = childName(entityName(i.name), new Set(listEntities().map((x) => x.name)));
     say(`  вложенный ${i.name} → ${child}`);
     await importEntity('component', child, url, e.name, args);
     // The fresh child matches by its component key: one more deps pass over the parent.
