@@ -34,6 +34,7 @@
    - screenshots;
    - deps: вложенные компоненты импортируются раньше родителя (`craftui create {…,"parent":"<Name>}`);
    - tokens → scaffold (черновики TSX и CSS из макета) → code (доводка черновиков по `craftui brief`) → tests → verify (до 5 итераций) → report.
+   Шаги normalize, tokens, scaffold и deps закрываются сами при успешном вызове инструмента (конфликты токенов и неразрешённые вложенные оставляют шаг открытым); extract и screenshots в chrome-режиме закрывает receiver последней выгрузкой сниппета. Ручные `step begin/done` — запасной путь.
 8. Итоговый отчёт — по `log-format.md`. `craftui step {"action":"done","entity":"<Name>","step":"report"}` закрывает версию импорта и пишет `README.md` в папке компонента. Затем пригласи пользователя дать правки.
 
 ## B. Продолжение
