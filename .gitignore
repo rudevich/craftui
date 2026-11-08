@@ -1,4 +1,6 @@
 node_modules/
+/.zcode
+/.serena
 playground/
 playground-*/
 .DS_Store
