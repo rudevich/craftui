@@ -33,5 +33,7 @@ export default async function run(CU: SnippetParams) {
       failed.push(`${a.file}: ${errorText(err)}`);
     }
   }
-  return { saved: done.length, failed };
+  // Every breakpoint exported without failures is the screenshots step complete: the receiver closes it.
+  if (!failed.length) await save('screenshots/.done', '', 'screenshots');
+  return { saved: done.length, failed, ...(failed.length ? {} : { stepClosed: 'screenshots' }) };
 }

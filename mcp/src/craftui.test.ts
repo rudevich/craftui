@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { beforeAll, afterAll, describe, expect, it } from '@rstest/core';
 import * as api from '../api.ts';
+import * as receiver from './receiver.ts';
 import { applyStep, breakpointsFromArg, newEntity, saveState } from './lib.ts';
 import { boolContent, mergeDefinitions, mergeProps, normNode } from './normalize.ts';
 import { bundle } from './snippets.ts';
@@ -722,5 +723,23 @@ describe('tool steps close themselves', () => {
     const out = await api.step({ entity: 'Demo', action: 'done', step: 'tokens' });
     expect(out).toContain('уже done');
     expect(e.state.steps.find((s) => s.id === 'tokens')!.status).toBe('done');
+  });
+
+  it('receiver closes the step when a snippet save carries done=<step>', async () => {
+    const e = entity();
+    const port = 46090;
+    await receiver.start({ port });
+    try {
+      const save = (file: string, done?: string) =>
+        fetch(`http://127.0.0.1:${port}/save?path=${encodeURIComponent(`src/components/Demo/craftlog/figma/${file}`)}${done ? `&done=${done}` : ''}`, { method: 'POST', body: '{}' }).then((r) => r.json() as Promise<{ ok: boolean }>);
+      expect((await save('raw/plugin.json')).ok).toBe(true);
+      expect(e.state.steps.find((s) => s.id === 'extract')!.status).toBe('pending');
+      expect((await save('raw/plugin.json', 'extract')).ok).toBe(true);
+      expect(e.state.steps.find((s) => s.id === 'extract')!.status).toBe('done');
+      // A save outside craftlog is rejected: no ok, no step closed.
+      expect((await save('../../outside/plugin.json', 'extract')).ok).toBeUndefined();
+    } finally {
+      await receiver.stop();
+    }
   });
 });

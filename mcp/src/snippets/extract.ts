@@ -74,7 +74,8 @@ export default async function run(CU: SnippetParams) {
     styles,
     instances: [...c.instances.values()],
   };
-  const bytes = await c.saveRaw(data);
+  // A clean run over all sources is the extract step complete: the receiver closes it; warnings (cap, empty filter) keep it open.
+  const bytes = await c.saveRaw(data, warnings.length ? undefined : 'extract');
   return {
     saved: `${CU.craftlog}/figma/raw/plugin.json`,
     bytes,
@@ -85,6 +86,6 @@ export default async function run(CU: SnippetParams) {
     styles: styles.length,
     instances: data.instances.map((i) => `${i.name} ×${i.nodeIds.length}${i.remote ? ' (library)' : ''}`),
     truncated: c.truncated,
-    ...(warnings.length ? { warnings } : {}),
+    ...(warnings.length ? { warnings } : { stepClosed: 'extract' }),
   };
 }

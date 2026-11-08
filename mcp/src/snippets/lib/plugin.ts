@@ -17,9 +17,10 @@ export async function requireFigma(): Promise<PluginAPI> {
   return figma;
 }
 
-/** Saves a file under craftlog/figma/ through the receiver: heavy data goes to disk, not through the model. */
-export const saver = (CU: SnippetParams) => async (file: string, body: string | Uint8Array) => {
-  const res = await fetch(`${CU.receiver}/save?path=${encodeURIComponent(`${CU.craftlog}/figma/${file}`)}`, { method: 'POST', body: body as BodyInit });
+/** Saves a file under craftlog/figma/ through the receiver: heavy data goes to disk, not through the model.
+ *  `done` on the last save is the step id: the receiver closes it, so the agent skips step done. */
+export const saver = (CU: SnippetParams) => async (file: string, body: string | Uint8Array, done?: string) => {
+  const res = await fetch(`${CU.receiver}/save?path=${encodeURIComponent(`${CU.craftlog}/figma/${file}`)}${done ? `&done=${done}` : ''}`, { method: 'POST', body: body as BodyInit });
   if (!res.ok) throw new Error(`receiver: ${res.status} ${await res.text()}`);
 };
 

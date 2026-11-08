@@ -4,7 +4,8 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { config, findEntity, safeCraftlogPath } from './lib.ts';
+import { applyStep, appendHistory, config, findEntity, kindDirs, safeCraftlogPath, saveState } from './lib.ts';
+import type { Kind } from './types.ts';
 import { renderSnippet } from './snippets.ts';
 
 const ALLOWED_ORIGIN = /^https:\/\/([a-z0-9-]+\.)*figma\.com$/;
@@ -70,6 +71,8 @@ export async function start({ port: given }: { port?: number } = {}): Promise<st
         if (url.searchParams.get('base64')) body = Buffer.from(body.toString('utf8'), 'base64');
         fs.mkdirSync(path.dirname(rel), { recursive: true });
         fs.writeFileSync(rel, body);
+        const done = url.searchParams.get('done');
+        if (done) closeStep(rel, done);
         console.error(`saved ${rel} (${body.length} B)`); // stderr: stdout carries the MCP protocol
         send(res, 200, { ok: true, path: rel, bytes: body.length });
       });
@@ -88,6 +91,27 @@ export async function start({ port: given }: { port?: number } = {}): Promise<st
   });
   server = created;
   return `receiver: http://127.0.0.1:${port} (остановится после 30 мин бездействия; сниппеты из страницы Figma пишут файлы сюда)`;
+}
+
+/** The snippet's last save carries done=<step>: the receiver closes it itself (extract/screenshots), so the agent skips step done.
+ *  Unknown entity or step only logs — the agent closes it manually as before. */
+function closeStep(rel: string, stepId: string) {
+  try {
+    const dirs = kindDirs();
+    const kind = (Object.keys(dirs) as Kind[]).find((k) => rel.startsWith(`${dirs[k]}/`));
+    if (!kind) return;
+    const name = rel.slice(dirs[kind].length + 1).split('/')[0];
+    const e = findEntity(`${kind}/${name}`);
+    const s = e.state;
+    const step = s.steps.find((x) => x.id === stepId);
+    if (!step || step.status === 'done' || step.status === 'skipped') return;
+    applyStep(s, stepId, 'done');
+    saveState(e, s);
+    appendHistory(e, `шаг ${stepId} выполнен (receiver)`);
+    console.error(`receiver: шаг ${stepId} закрыт (${e.name})`);
+  } catch (err) {
+    console.error(`receiver: не закрыл шаг ${stepId} — ${String((err as Error)?.message ?? err)}`);
+  }
 }
 
 export async function stop(): Promise<string> {

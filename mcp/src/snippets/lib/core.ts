@@ -150,9 +150,9 @@ export async function core(CU: SnippetParams) {
   }
 
   const save = saver(CU);
-  async function saveRaw(data: Raw): Promise<number> {
+  async function saveRaw(data: Raw, done?: string): Promise<number> {
     const body = JSON.stringify(data);
-    await save('raw/plugin.json', body);
+    await save('raw/plugin.json', body, done);
     return body.length;
   }
 

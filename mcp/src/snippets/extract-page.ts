@@ -37,7 +37,8 @@ export default async function run(CU: SnippetParams) {
     instances: [...c.instances.values()],
     images: c.images,
   };
-  const bytes = await c.saveRaw(data);
+  // All breakpoint frames serialized in one run: the receiver closes the extract step.
+  const bytes = await c.saveRaw(data, 'extract');
   return {
     saved: `${CU.craftlog}/figma/raw/plugin.json`,
     bytes,
@@ -46,5 +47,6 @@ export default async function run(CU: SnippetParams) {
     images: c.images.length,
     components: data.instances.map((i) => `${i.name} ×${i.nodeIds.length}`),
     truncated: c.truncated,
+    stepClosed: 'extract',
   };
 }
