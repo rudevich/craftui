@@ -60,7 +60,7 @@ export default async function run(CU: SnippetParams) {
     for (const v of picked) flat.push({ v, index });
   }
   // The cut is fixed before serialization; variants serialize with a bound in flight, the order stays the source order.
-  c.plan(...flat.map((x) => x.v));
+  await c.plan(...flat.map((x) => x.v));
   const rows = await pool(flat, 8, async ({ v, index }) => {
     const own = plain(v.variantProperties ?? null);
     const added = (sources[index].variant ?? {}) as Record<string, string>;

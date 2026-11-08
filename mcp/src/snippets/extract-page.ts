@@ -26,7 +26,7 @@ export default async function run(CU: SnippetParams) {
     for (const f of frames) framesOf.push({ f, source: sources.length - 1 });
   }
   // The cut is fixed before serialization; frames serialize with a bound in flight, the order stays the source order.
-  c.plan(...framesOf.map((x) => x.f));
+  await c.plan(...framesOf.map((x) => x.f));
   const variants: RawVariant[] = await pool(framesOf, 4, async ({ f, source }) => ({ id: f.id, name: f.name, source, width: f.width, height: f.height, tree: await ser(f) }));
 
   const { variables, collections, styles } = await c.variablesAndStyles();

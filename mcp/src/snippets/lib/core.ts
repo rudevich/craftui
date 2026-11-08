@@ -18,6 +18,7 @@ export async function core(CU: SnippetParams) {
   // Truncation is decided by a synchronous pre-order pass (plan) before any serialization: parallel ser() then cannot change the cut.
   const allowed = new Set<string>();
   const mainCache = new Map<string, Promise<ComponentNode | null>>();
+  const imported = new Map<string, Promise<ComponentNode | null>>();
   let planned = 0;
   let truncated = false;
 
@@ -42,18 +43,43 @@ export async function core(CU: SnippetParams) {
     'fillStyleId', 'strokeStyleId', 'effectStyleId', 'textStyleId', 'componentPropertyReferences', 'explicitVariableModes',
   ];
 
+  /** The main component of an instance, deduped by main id (instances of one component share it). */
+  const mainOf = (n: InstanceNode): Promise<ComponentNode | null> => {
+    let mainKey = n.id;
+    try {
+      mainKey = n.mainComponent?.id ?? n.id;
+    } catch {}
+    const p = mainCache.get(mainKey) ?? n.getMainComponentAsync().catch(() => null);
+    mainCache.set(mainKey, p);
+    return p;
+  };
+
+  /** Library content may not be loaded into the file: importing the main component brings its subtree. */
+  const loadMain = (main: ComponentNode): Promise<ComponentNode | null> => {
+    if (!imported.has(main.key)) imported.set(main.key, figma.importComponentByKeyAsync(main.key).catch(() => null));
+    return imported.get(main.key)!;
+  };
+
+  /** The children to serialize for a node: an unloaded instance borrows its main component's subtree. */
+  const kidsOf = async (n: SceneNode, main: ComponentNode | null): Promise<readonly SceneNode[]> => {
+    if ('children' in n && n.children.length) return n.children;
+    if (n.type === 'INSTANCE' && main) return (await loadMain(main))?.children ?? [];
+    return [];
+  };
+
   /** Fixes which nodes serialize (MAX_NODES, DFS pre-order over the roots); ser() then serializes exactly them, in any order. */
-  function plan(...roots: SceneNode[]) {
-    const visit = (n: SceneNode) => {
+  async function plan(...roots: SceneNode[]) {
+    const visit = async (n: SceneNode) => {
       if (planned >= MAX_NODES) {
         truncated = true;
         return;
       }
       planned++;
       allowed.add(n.id);
-      if ('children' in n) for (const c of n.children) visit(c);
+      const main = n.type === 'INSTANCE' ? await mainOf(n as InstanceNode) : null;
+      for (const c of await kidsOf(n, main)) await visit(c);
     };
-    roots.forEach(visit);
+    for (const r of roots) await visit(r);
   }
 
   async function ser(n: SceneNode): Promise<RawNode> {
@@ -95,15 +121,12 @@ export async function core(CU: SnippetParams) {
         });
       } catch {}
     }
+    let kids: SceneNode[] = [];
+    let main: ComponentNode | null = null;
     if (n.type === 'INSTANCE') {
       // Instances share their main component: fetch it once per main id, together with this node's css.
-      let mainKey = n.id;
-      try {
-        mainKey = (n as InstanceNode).mainComponent?.id ?? n.id;
-      } catch {}
-      const mainP = mainCache.get(mainKey) ?? (n as InstanceNode).getMainComponentAsync().catch(() => null);
-      mainCache.set(mainKey, mainP);
-      const [main, css] = await Promise.all([mainP, n.getCSSAsync().catch(() => undefined)] as const);
+      const [mainLoaded, css] = await Promise.all([mainOf(n as InstanceNode), n.getCSSAsync().catch(() => undefined)] as const);
+      main = mainLoaded;
       const set = main?.parent?.type === 'COMPONENT_SET' ? main.parent : null;
       o.instanceOf = main ? { id: main.id, key: main.key, name: main.name, remote: main.remote, set: set && { id: set.id, key: set.key, name: set.name } } : undefined;
       o.variantProperties = plain(n.variantProperties);
@@ -120,7 +143,8 @@ export async function core(CU: SnippetParams) {
         o.css = await n.getCSSAsync();
       } catch {}
     }
-    if ('children' in n && n.children.length) o.children = await Promise.all(n.children.map(ser));
+    for (const c of await kidsOf(n, main)) kids.push(c);
+    if (kids.length) o.children = await Promise.all(kids.map((c) => ser(c)));
     return o;
   }
 
